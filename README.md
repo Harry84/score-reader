@@ -2,7 +2,7 @@
 
 This project uses AI vision capabilities to extract and analyze scores from Star Wars Squadrons game screenshots, building a comprehensive database of match results and player statistics. It includes ELO rating systems to track both team and individual player skill levels.
 
-## 🚀 Live Demo
+## Live Demo
 
 - **Main site**: [https://harry84.github.io/score-reader/](https://harry84.github.io/score-reader/)
 - **Mirror site**: [https://gmt-erisi.github.io/score-reader/](https://gmt-erisi.github.io/score-reader/)
