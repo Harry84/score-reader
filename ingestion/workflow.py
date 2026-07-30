@@ -1,13 +1,13 @@
 """Ingestion workflow core (ADR-0005): turns an extracted screenshot into a
 persisted Match, pausing on pending_matches for anything ambiguous.
 
-This first slice only handles the fully-unambiguous case: every player
-exactly matches an existing ref_players row, and each faction's players
-agree on a single primary team. Ambiguity handling (unrecognized player,
-disagreeing team assignment, subbing, role overrides) is added in later
-slices.
+Handled so far: unrecognized player names pause at
+awaiting_player_match:<name> and resume via submit_answer once a candidate
+is selected. Not yet handled (raises NotImplementedError): disagreeing team
+assignment within a faction, subbing, role overrides.
 """
 
+import difflib
 import hashlib
 import json
 
@@ -28,6 +28,28 @@ def _find_ref_player(pg_conn, name):
     return {"id": row[0], "primary_team_id": row[1], "primary_role": row[2]}
 
 
+def _get_ref_player_by_id(pg_conn, ref_player_id):
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "SELECT id, primary_team_id, primary_role FROM ref_players WHERE id = %s",
+            (ref_player_id,),
+        )
+        row = cur.fetchone()
+    return {"id": row[0], "primary_team_id": row[1], "primary_role": row[2]}
+
+
+def _find_player_candidates(pg_conn, name, limit=3, cutoff=0.6):
+    with pg_conn.cursor() as cur:
+        cur.execute("SELECT id, name FROM ref_players")
+        all_players = cur.fetchall()
+
+    id_by_name = {player_name: player_id for player_id, player_name in all_players}
+    close_names = difflib.get_close_matches(
+        name, id_by_name.keys(), n=limit, cutoff=cutoff
+    )
+    return [{"id": id_by_name[n], "name": n} for n in close_names]
+
+
 def _get_or_create_team(pg_conn, ref_team_id):
     with pg_conn.cursor() as cur:
         cur.execute("SELECT id FROM teams WHERE reference_id = %s", (ref_team_id,))
@@ -43,27 +65,50 @@ def _get_or_create_team(pg_conn, ref_team_id):
         return cur.fetchone()[0]
 
 
-def _get_or_create_player(pg_conn, name, ref_player_id):
+def _get_or_create_player(pg_conn, ref_player_id):
+    """Returns (player_id, canonical_name). The players row always uses the
+    reference DB's canonical name, never the as-typed name from a screenshot
+    (which may be a typo an earlier ambiguity step resolved past)."""
     with pg_conn.cursor() as cur:
-        cur.execute("SELECT id FROM players WHERE reference_id = %s", (ref_player_id,))
+        cur.execute(
+            "SELECT id, name FROM players WHERE reference_id = %s", (ref_player_id,)
+        )
         row = cur.fetchone()
         if row:
-            return row[0]
+            return row[0], row[1]
+        cur.execute("SELECT name FROM ref_players WHERE id = %s", (ref_player_id,))
+        (canonical_name,) = cur.fetchone()
         cur.execute(
             "INSERT INTO players (name, reference_id, player_hash) VALUES (%s, %s, %s) RETURNING id",
-            (name, ref_player_id, _player_hash(name)),
+            (canonical_name, ref_player_id, _player_hash(canonical_name)),
         )
-        return cur.fetchone()[0]
+        return cur.fetchone()[0], canonical_name
 
 
-def _resolve_faction(pg_conn, faction_players):
+def _resolve_faction(pg_conn, faction_players, player_resolutions):
+    """Returns (resolved, pause). Exactly one of the two is not None: resolved
+    when every player and the faction's team assignment are unambiguous, or
+    pause describing the first ambiguity hit, to be applied to the
+    pending_matches row by the caller."""
     resolved_players = []
     for p in faction_players:
-        ref_player = _find_ref_player(pg_conn, p["player"])
+        override = player_resolutions.get(p["player"])
+        if override is not None:
+            ref_player = _get_ref_player_by_id(pg_conn, override["ref_player_id"])
+        else:
+            ref_player = _find_ref_player(pg_conn, p["player"])
+
         if ref_player is None:
-            raise NotImplementedError(
-                f"Unrecognized player '{p['player']}' - ambiguity resolution not yet implemented"
-            )
+            candidates = _find_player_candidates(pg_conn, p["player"])
+            pause = {
+                "status": f"awaiting_player_match:{p['player']}",
+                "question": {
+                    "type": "player_match",
+                    "player_name": p["player"],
+                    "candidates": candidates,
+                },
+            }
+            return None, pause
         resolved_players.append({**p, "ref_player": ref_player})
 
     primary_team_ids = {rp["ref_player"]["primary_team_id"] for rp in resolved_players}
@@ -72,26 +117,44 @@ def _resolve_faction(pg_conn, faction_players):
             "Ambiguous or missing team assignment - not yet implemented"
         )
 
-    return {"players": resolved_players, "ref_team_id": primary_team_ids.pop()}
+    return {"players": resolved_players, "ref_team_id": primary_team_ids.pop()}, None
 
 
-def start_ingestion(pg_conn, turn_id, system_id, match_type, screenshot_ref, extracted_data):
+def _load_pending_match(pg_conn, pending_match_id):
     with pg_conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO pending_matches (turn_id, system_id, screenshot_ref, status, extracted_data)
-            VALUES (%s, %s, %s, 'extracted', %s)
-            RETURNING id
+            SELECT turn_id, system_id, match_type, extracted_data, answers
+            FROM pending_matches WHERE id = %s
             """,
-            (turn_id, system_id, screenshot_ref, json.dumps(extracted_data)),
+            (pending_match_id,),
         )
-        pending_match_id = cur.fetchone()[0]
-    pg_conn.commit()
-
-    resolved = {
-        faction: _resolve_faction(pg_conn, extracted_data["teams"][faction]["players"])
-        for faction in ("imperial", "rebel")
+        turn_id, system_id, match_type, extracted_data, answers = cur.fetchone()
+    return {
+        "turn_id": turn_id,
+        "system_id": system_id,
+        "match_type": match_type,
+        "extracted_data": extracted_data,
+        "answers": answers,
     }
+
+
+def _pause(pg_conn, pending_match_id, pause):
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "UPDATE pending_matches SET status = %s, updated_at = now() WHERE id = %s",
+            (pause["status"], pending_match_id),
+        )
+    pg_conn.commit()
+    return {
+        "status": pause["status"],
+        "pending_match_id": pending_match_id,
+        "question": pause["question"],
+    }
+
+
+def _persist(pg_conn, pending_match_id, pending_match, resolved):
+    extracted_data = pending_match["extracted_data"]
 
     team_id_by_faction = {
         faction: _get_or_create_team(pg_conn, resolved[faction]["ref_team_id"])
@@ -109,9 +172,9 @@ def start_ingestion(pg_conn, turn_id, system_id, match_type, screenshot_ref, ext
                 team_id_by_faction["imperial"],
                 team_id_by_faction["rebel"],
                 extracted_data["match_result"],
-                match_type,
-                turn_id,
-                system_id,
+                pending_match["match_type"],
+                pending_match["turn_id"],
+                pending_match["system_id"],
             ),
         )
         match_id = cur.fetchone()[0]
@@ -119,13 +182,13 @@ def start_ingestion(pg_conn, turn_id, system_id, match_type, screenshot_ref, ext
         for faction, data in resolved.items():
             match_team_id = team_id_by_faction[faction]
             for rp in data["players"]:
-                player_id = _get_or_create_player(
-                    pg_conn, rp["player"], rp["ref_player"]["id"]
+                player_id, canonical_name = _get_or_create_player(
+                    pg_conn, rp["ref_player"]["id"]
                 )
-                # data["ref_team_id"] is the single primary team every player in this
-                # faction agreed on (enforced in _resolve_faction), so is_subbing is
-                # always False in this slice; written generally for when partial
-                # subbing is handled in a later slice.
+                # data["ref_team_id"] is the single primary team every player in
+                # this faction agreed on (enforced in _resolve_faction), so
+                # is_subbing is always False today; written generally for when
+                # partial subbing is handled in a later slice.
                 is_subbing = rp["ref_player"]["primary_team_id"] != data["ref_team_id"]
                 cur.execute(
                     """
@@ -139,7 +202,7 @@ def start_ingestion(pg_conn, turn_id, system_id, match_type, screenshot_ref, ext
                         match_id,
                         player_id,
                         rp["player"],
-                        _player_hash(rp["player"]),
+                        _player_hash(canonical_name),
                         match_team_id,
                         faction.upper(),
                         rp["position"],
@@ -165,3 +228,63 @@ def start_ingestion(pg_conn, turn_id, system_id, match_type, screenshot_ref, ext
         "match_id": match_id,
         "pending_match_id": pending_match_id,
     }
+
+
+def _advance(pg_conn, pending_match_id):
+    pending_match = _load_pending_match(pg_conn, pending_match_id)
+    player_resolutions = pending_match["answers"].get("player_resolutions", {})
+
+    resolved = {}
+    for faction in ("imperial", "rebel"):
+        faction_resolved, pause = _resolve_faction(
+            pg_conn,
+            pending_match["extracted_data"]["teams"][faction]["players"],
+            player_resolutions,
+        )
+        if pause is not None:
+            return _pause(pg_conn, pending_match_id, pause)
+        resolved[faction] = faction_resolved
+
+    return _persist(pg_conn, pending_match_id, pending_match, resolved)
+
+
+def start_ingestion(pg_conn, turn_id, system_id, match_type, screenshot_ref, extracted_data):
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO pending_matches
+                (turn_id, system_id, match_type, screenshot_ref, status, extracted_data, answers)
+            VALUES (%s, %s, %s, %s, 'extracted', %s, '{}'::jsonb)
+            RETURNING id
+            """,
+            (turn_id, system_id, match_type, screenshot_ref, json.dumps(extracted_data)),
+        )
+        pending_match_id = cur.fetchone()[0]
+    pg_conn.commit()
+
+    return _advance(pg_conn, pending_match_id)
+
+
+def submit_answer(pg_conn, pending_match_id, answer):
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "SELECT status, answers FROM pending_matches WHERE id = %s",
+            (pending_match_id,),
+        )
+        status, answers = cur.fetchone()
+
+    if status.startswith("awaiting_player_match:"):
+        player_name = status[len("awaiting_player_match:") :]
+        player_resolutions = answers.setdefault("player_resolutions", {})
+        player_resolutions[player_name] = answer
+    else:
+        raise NotImplementedError(f"Cannot answer status '{status}' yet")
+
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "UPDATE pending_matches SET answers = %s, updated_at = now() WHERE id = %s",
+            (json.dumps(answers), pending_match_id),
+        )
+    pg_conn.commit()
+
+    return _advance(pg_conn, pending_match_id)

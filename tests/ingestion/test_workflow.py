@@ -1,5 +1,5 @@
 from db.migrate_runner import apply_schema
-from ingestion.workflow import start_ingestion
+from ingestion.workflow import start_ingestion, submit_answer
 
 
 def _make_ref_team(pg_conn, name):
@@ -115,3 +115,126 @@ def test_unambiguous_screenshot_is_persisted_immediately(pg_conn):
         ("Vader", "IMPERIAL", "Flex", 1675, 4, False),
         ("Wedge", "REBEL", "Flex", 1200, 2, False),
     ]
+
+
+def test_unrecognized_player_name_pauses_for_clarification(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    imperial_team_id = _make_ref_team(pg_conn, "181st")
+    rebel_team_id = _make_ref_team(pg_conn, "Rogue Squadron")
+    vader_id = _make_ref_player(pg_conn, "Vader", imperial_team_id, "Flex")
+    _make_ref_player(pg_conn, "Tarkin", imperial_team_id, "Support")
+    _make_ref_player(pg_conn, "Wedge", rebel_team_id, "Flex")
+    _make_ref_player(pg_conn, "Luke", rebel_team_id, "Support")
+    pg_conn.commit()
+
+    system_id = _get_system_id(pg_conn)
+
+    extracted_data = {
+        "match_result": "IMPERIAL VICTORY",
+        "teams": {
+            "imperial": {
+                "players": [
+                    # Typo'd relative to the reference DB's "Vader".
+                    _player("Vadar", "Titan One", 1675, 4, 2, 1, 18, 30139),
+                    _player("Tarkin", "Titan Two", 900, 1, 3, 2, 5, 0),
+                ]
+            },
+            "rebel": {
+                "players": [
+                    _player("Wedge", "Vanguard One", 1200, 2, 4, 0, 10, 0),
+                    _player("Luke", "Vanguard Two", 1400, 3, 1, 2, 12, 0),
+                ]
+            },
+        },
+    }
+
+    result = start_ingestion(
+        pg_conn,
+        turn_id="turn-1",
+        system_id=system_id,
+        match_type="team",
+        screenshot_ref="discord://message/456",
+        extracted_data=extracted_data,
+    )
+
+    assert result["status"] == "awaiting_player_match:Vadar"
+    assert result["question"] == {
+        "type": "player_match",
+        "player_name": "Vadar",
+        "candidates": [{"id": vader_id, "name": "Vader"}],
+    }
+
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "SELECT status FROM pending_matches WHERE id = %s",
+            (result["pending_match_id"],),
+        )
+        assert cur.fetchone()[0] == "awaiting_player_match:Vadar"
+
+
+def test_submit_answer_resolves_paused_player_and_persists_match(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    imperial_team_id = _make_ref_team(pg_conn, "181st")
+    rebel_team_id = _make_ref_team(pg_conn, "Rogue Squadron")
+    vader_id = _make_ref_player(pg_conn, "Vader", imperial_team_id, "Flex")
+    _make_ref_player(pg_conn, "Tarkin", imperial_team_id, "Support")
+    _make_ref_player(pg_conn, "Wedge", rebel_team_id, "Flex")
+    _make_ref_player(pg_conn, "Luke", rebel_team_id, "Support")
+    pg_conn.commit()
+
+    system_id = _get_system_id(pg_conn)
+
+    extracted_data = {
+        "match_result": "IMPERIAL VICTORY",
+        "teams": {
+            "imperial": {
+                "players": [
+                    _player("Vadar", "Titan One", 1675, 4, 2, 1, 18, 30139),
+                    _player("Tarkin", "Titan Two", 900, 1, 3, 2, 5, 0),
+                ]
+            },
+            "rebel": {
+                "players": [
+                    _player("Wedge", "Vanguard One", 1200, 2, 4, 0, 10, 0),
+                    _player("Luke", "Vanguard Two", 1400, 3, 1, 2, 12, 0),
+                ]
+            },
+        },
+    }
+
+    paused = start_ingestion(
+        pg_conn,
+        turn_id="turn-1",
+        system_id=system_id,
+        match_type="team",
+        screenshot_ref="discord://message/789",
+        extracted_data=extracted_data,
+    )
+    assert paused["status"] == "awaiting_player_match:Vadar"
+
+    result = submit_answer(
+        pg_conn, paused["pending_match_id"], {"ref_player_id": vader_id}
+    )
+
+    assert result["status"] == "persisted"
+    match_id = result["match_id"]
+
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "SELECT player_name, faction, role, score, is_subbing FROM player_stats WHERE match_id = %s AND player_name = 'Vadar'",
+            (match_id,),
+        )
+        row = cur.fetchone()
+
+    assert row == ("Vadar", "IMPERIAL", "Flex", 1675, False)
+
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "SELECT status FROM pending_matches WHERE id = %s",
+            (paused["pending_match_id"],),
+        )
+        assert cur.fetchone()[0] == "persisted"
