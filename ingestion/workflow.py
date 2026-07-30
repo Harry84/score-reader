@@ -1,10 +1,14 @@
 """Ingestion workflow core (ADR-0005): turns an extracted screenshot into a
 persisted Match, pausing on pending_matches for anything ambiguous.
 
-Handled so far: unrecognized player names pause at
-awaiting_player_match:<name> and resume via submit_answer once a candidate
-is selected. Not yet handled (raises NotImplementedError): disagreeing team
-assignment within a faction, subbing, role overrides.
+Ambiguity types handled, each pausing at a distinct status and resuming via
+submit_answer: unrecognized player name (awaiting_player_match:<name>), no
+clear-majority team assignment for match_type "team"
+(awaiting_team_assignment:<faction>), and no primary role on record
+(awaiting_role:<name>). match_type "pickup"/"ranked" never pause for team
+assignment at all - they use a fixed generic placeholder team instead
+(GENERIC_TEAM_NAMES) and leave player_stats.team_id NULL, matching the
+existing system's behavior.
 """
 
 import difflib
@@ -65,6 +69,25 @@ def _get_or_create_team(pg_conn, ref_team_id):
             "INSERT INTO teams (name, reference_id) VALUES (%s, %s) RETURNING id",
             (name, ref_team_id),
         )
+        return cur.fetchone()[0]
+
+
+# Generic placeholder team names for match types with no real team
+# assignment, matching the existing system's naming exactly (README.md /
+# ELO_LADDER_README.md) since other tooling may reference these by name.
+GENERIC_TEAM_NAMES = {
+    "pickup": {"imperial": "Imp_pickup_team", "rebel": "NR_pickup_team"},
+    "ranked": {"imperial": "Imperial_ranked_team", "rebel": "NR_ranked_team"},
+}
+
+
+def _get_or_create_team_by_name(pg_conn, name):
+    with pg_conn.cursor() as cur:
+        cur.execute("SELECT id FROM teams WHERE name = %s", (name,))
+        row = cur.fetchone()
+        if row:
+            return row[0]
+        cur.execute("INSERT INTO teams (name) VALUES (%s) RETURNING id", (name,))
         return cur.fetchone()[0]
 
 
@@ -172,12 +195,11 @@ def _resolve_faction(
         resolved_players.append({**p, "ref_player": ref_player, "role": role})
 
     if match_type != "team":
-        # Pickup/ranked matches don't associate players with a team at all
-        # (existing behavior: player_stats.team_id stays NULL for these).
-        # Generic per-match team naming for pickup/ranked is not yet ported.
-        raise NotImplementedError(
-            f"match_type '{match_type}' team assignment not yet implemented"
-        )
+        # Pickup/ranked matches never associate players with a team - no
+        # majority vote, no pause, ever (existing behavior: player_stats.team_id
+        # stays NULL, and the match itself uses a generic placeholder team;
+        # see GENERIC_TEAM_NAMES / _persist).
+        return {"players": resolved_players, "ref_team_id": None}, None
 
     if faction in team_assignments:
         ref_team_id = team_assignments[faction]
@@ -246,11 +268,19 @@ def _normalize_winner(match_result):
 def _persist(pg_conn, pending_match_id, pending_match, resolved):
     extracted_data = pending_match["extracted_data"]
     winner = _normalize_winner(extracted_data["match_result"])
+    match_type = pending_match["match_type"]
 
-    team_id_by_faction = {
-        faction: _get_or_create_team(pg_conn, resolved[faction]["ref_team_id"])
-        for faction in ("imperial", "rebel")
-    }
+    if match_type == "team":
+        team_id_by_faction = {
+            faction: _get_or_create_team(pg_conn, resolved[faction]["ref_team_id"])
+            for faction in ("imperial", "rebel")
+        }
+    else:
+        generic_names = GENERIC_TEAM_NAMES[match_type]
+        team_id_by_faction = {
+            faction: _get_or_create_team_by_name(pg_conn, generic_names[faction])
+            for faction in ("imperial", "rebel")
+        }
 
     with pg_conn.cursor() as cur:
         cur.execute(
@@ -290,13 +320,16 @@ def _persist(pg_conn, pending_match_id, pending_match, resolved):
             )
 
         for faction, data in resolved.items():
-            match_team_id = team_id_by_faction[faction]
+            # player_stats.team_id stays NULL for pickup/ranked - those
+            # matches associate a player with no specific team at all, unlike
+            # the generic placeholder team recorded at the match level above.
+            player_team_id = team_id_by_faction[faction] if match_type == "team" else None
             for rp in data["players"]:
                 player_id, canonical_name = _get_or_create_player(
                     pg_conn, rp["ref_player"]["id"]
                 )
                 is_subbing = (
-                    pending_match["match_type"] == "team"
+                    match_type == "team"
                     and rp["ref_player"]["primary_team_id"] != data["ref_team_id"]
                 )
                 cur.execute(
@@ -312,7 +345,7 @@ def _persist(pg_conn, pending_match_id, pending_match, resolved):
                         player_id,
                         rp["player"],
                         _player_hash(canonical_name),
-                        match_team_id,
+                        player_team_id,
                         faction.upper(),
                         rp["position"],
                         rp["role"],

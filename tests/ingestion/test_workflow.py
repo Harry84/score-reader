@@ -462,3 +462,128 @@ def test_player_with_no_primary_role_pauses_for_clarification(pg_conn):
             (result["match_id"],),
         )
         assert cur.fetchone()[0] == "Flex"
+
+
+def test_pickup_match_uses_generic_teams_and_nulls_player_team_id(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    # Different primary teams on the same faction - would pause for
+    # match_type "team" (no clear majority), but pickup never assigns
+    # players to a team at all, so this should persist directly.
+    team_a_id = _make_ref_team(pg_conn, "181st")
+    team_b_id = _make_ref_team(pg_conn, "Death Squadron")
+    rebel_team_id = _make_ref_team(pg_conn, "Rogue Squadron")
+    _make_ref_player(pg_conn, "Vader", team_a_id, "Flex")
+    _make_ref_player(pg_conn, "Tarkin", team_b_id, "Support")
+    _make_ref_player(pg_conn, "Wedge", rebel_team_id, "Flex")
+    _make_ref_player(pg_conn, "Luke", rebel_team_id, "Support")
+    pg_conn.commit()
+
+    system_id = _get_system_id(pg_conn)
+
+    extracted_data = {
+        "match_result": "IMPERIAL VICTORY",
+        "teams": {
+            "imperial": {
+                "players": [
+                    _player("Vader", "Titan One", 1675, 4, 2, 1, 18, 30139),
+                    _player("Tarkin", "Titan Two", 900, 1, 3, 2, 5, 0),
+                ]
+            },
+            "rebel": {
+                "players": [
+                    _player("Wedge", "Vanguard One", 1200, 2, 4, 0, 10, 0),
+                    _player("Luke", "Vanguard Two", 1400, 3, 1, 2, 12, 0),
+                ]
+            },
+        },
+    }
+
+    result = start_ingestion(
+        pg_conn,
+        turn_id="turn-1",
+        system_id=system_id,
+        match_type="pickup",
+        screenshot_ref="discord://message/909",
+        extracted_data=extracted_data,
+    )
+
+    assert result["status"] == "persisted"
+    match_id = result["match_id"]
+
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT imp.name, reb.name FROM matches m
+            JOIN teams imp ON m.imperial_team_id = imp.id
+            JOIN teams reb ON m.rebel_team_id = reb.id
+            WHERE m.id = %s
+            """,
+            (match_id,),
+        )
+        imperial_team_name, rebel_team_name = cur.fetchone()
+
+    assert imperial_team_name == "Imp_pickup_team"
+    assert rebel_team_name == "NR_pickup_team"
+
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "SELECT player_name, team_id, is_subbing FROM player_stats WHERE match_id = %s ORDER BY player_name",
+            (match_id,),
+        )
+        rows = cur.fetchall()
+
+    assert rows == [
+        ("Luke", None, False),
+        ("Tarkin", None, False),
+        ("Vader", None, False),
+        ("Wedge", None, False),
+    ]
+
+
+def test_ranked_match_uses_generic_ranked_team_names(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    imperial_team_id = _make_ref_team(pg_conn, "181st")
+    rebel_team_id = _make_ref_team(pg_conn, "Rogue Squadron")
+    _make_ref_player(pg_conn, "Vader", imperial_team_id, "Flex")
+    _make_ref_player(pg_conn, "Wedge", rebel_team_id, "Flex")
+    pg_conn.commit()
+
+    system_id = _get_system_id(pg_conn)
+
+    extracted_data = {
+        "match_result": "REBEL VICTORY",
+        "teams": {
+            "imperial": {"players": [_player("Vader", "Titan One", 1000, 2, 2, 0, 5, 0)]},
+            "rebel": {"players": [_player("Wedge", "Vanguard One", 1500, 5, 0, 1, 10, 0)]},
+        },
+    }
+
+    result = start_ingestion(
+        pg_conn,
+        turn_id="turn-1",
+        system_id=system_id,
+        match_type="ranked",
+        screenshot_ref="discord://message/910",
+        extracted_data=extracted_data,
+    )
+
+    assert result["status"] == "persisted"
+
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT imp.name, reb.name FROM matches m
+            JOIN teams imp ON m.imperial_team_id = imp.id
+            JOIN teams reb ON m.rebel_team_id = reb.id
+            WHERE m.id = %s
+            """,
+            (result["match_id"],),
+        )
+        imperial_team_name, rebel_team_name = cur.fetchone()
+
+    assert imperial_team_name == "Imperial_ranked_team"
+    assert rebel_team_name == "NR_ranked_team"
