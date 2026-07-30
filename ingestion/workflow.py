@@ -16,6 +16,7 @@ import hashlib
 import json
 from collections import Counter
 
+from stats.player_elo import recompute_player_elo
 from stats.team_elo import recompute_team_elo
 
 
@@ -369,6 +370,8 @@ def _persist(pg_conn, pending_match_id, pending_match, resolved):
 
     if match_type == "team":
         recompute_team_elo(pg_conn, pending_match["campaign_id"])
+    else:
+        recompute_player_elo(pg_conn, pending_match["campaign_id"], match_type)
 
     return {
         "status": "persisted",

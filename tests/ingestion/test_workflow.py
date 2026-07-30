@@ -548,6 +548,22 @@ def test_pickup_match_uses_generic_teams_and_nulls_player_team_id(pg_conn):
         ("Wedge", None, False),
     ]
 
+    # Player ELO recompute fires synchronously for pickup, same as team ELO
+    # does for match_type "team" (both sides started at 1000, imperial won).
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT p.name, per.rating FROM player_elo_ratings per
+            JOIN players p ON per.player_id = p.id
+            WHERE per.campaign_id = 'campaign-1' AND per.match_type = 'pickup' AND per.role = 'general'
+            ORDER BY p.name
+            """
+        )
+        general_ratings = {name: float(rating) for name, rating in cur.fetchall()}
+
+    assert general_ratings["Vader"] == pytest.approx(1016.0)
+    assert general_ratings["Wedge"] == pytest.approx(984.0)
+
 
 def test_ranked_match_uses_generic_ranked_team_names(pg_conn):
     apply_schema(pg_conn)
@@ -595,3 +611,18 @@ def test_ranked_match_uses_generic_ranked_team_names(pg_conn):
 
     assert imperial_team_name == "Imperial_ranked_team"
     assert rebel_team_name == "NR_ranked_team"
+
+    # Ranked gets its own player ELO ladder too (REBEL won here).
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT p.name, per.rating FROM player_elo_ratings per
+            JOIN players p ON per.player_id = p.id
+            WHERE per.campaign_id = 'campaign-1' AND per.match_type = 'ranked' AND per.role = 'general'
+            ORDER BY p.name
+            """
+        )
+        general_ratings = {name: float(rating) for name, rating in cur.fetchall()}
+
+    assert general_ratings["Vader"] == pytest.approx(984.0)
+    assert general_ratings["Wedge"] == pytest.approx(1016.0)
