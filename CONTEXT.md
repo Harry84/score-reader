@@ -17,6 +17,12 @@ The gated leadup-to-a-game period, owned and tracked entirely by the NPC Command
 **Team**:
 A persistent, named squadron — unchanged from the existing `ref_teams`/`teams` concept. Created via a Discord command backed by the reference database (not a new roster concept). A faction can have more than one standing Team; a Team's players are canonical `ref_players` records.
 
+**Captain**:
+The single Discord user authorized to manage one Team's roster — attaching existing canonical Players to it. Recorded as `ref_teams.captain_discord_id`, verified independently by the backend (not just trusted from the caller) whenever a roster change is requested. A Captain cannot create a genuinely new Team or Player — only attach players who already exist in the reference DB to the one Team they captain.
+
+**Admin**:
+A Discord user authorized to create genuinely new canonical Teams and Players. Unlike Captain, Admin-ness is not modeled in this project's schema at all — it lives entirely in Discord's own role system and is checked by the score bot before it ever calls the backend (see docs/adr/0008-captain-and-admin-authorization.md).
+
 **Faction**:
 One of the two overarching campaign sides (Imperial/Rebel), each with its own commander and Discord channel. Orthogonal to Team: a Match is one Team's roster (or players assigned for that side) playing under a Faction, in a specific System, within a Turn.
 

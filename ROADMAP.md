@@ -24,10 +24,13 @@ Implementation plan for turning this project into the score/stats/ELO backend fo
 
 ## Phase 2 — Team onboarding API
 
-- Endpoints backing the score bot's team-admin commands (Phase 4), reusing the reference DB rather than a new roster concept (CONTEXT.md: Team) — `POST /teams` (create/find by name), `POST /teams/{id}/players` (attach a player, canonical or new, with primary role), `GET /teams`/`GET /teams/{id}` for lookups the bot needs to render.
+- Endpoints backing the score bot's team-admin commands (Phase 4), reusing the reference DB rather than a new roster concept (CONTEXT.md: Team). Two trust levels, per ADR-0008:
+  - Admin-only (trusted implicitly from the bot, no independent backend check): `POST /teams` (create/find by name), `POST /players` (create a genuinely new canonical player), `POST /teams/{id}/captain` (assign/change `captain_discord_id`).
+  - Captain-only (backend-verified against `ref_teams.captain_discord_id`): `POST /teams/{id}/roster` — attach an *existing* `ref_player_id` to that team, rejected if the caller's `requesting_discord_id` isn't the team's captain.
+  - Open lookups: `GET /teams`, `GET /teams/{id}` for the bot to render pickers/rosters.
 - This has to land before real Discord usage of Phase 1 is possible — ingestion's identity resolution depends on rosters already existing in `ref_teams`/`ref_players` — but is being built after the ingestion core so the workflow's assumptions about what "resolved" reference data looks like are already settled by real tests, not guessed at.
 
-**Tests:** integration tests hitting each endpoint against a real Postgres test database — create-team idempotency (matching `reference_manager.add_team`'s existing behavior of returning the existing row on a duplicate name), attach-player happy path, attach-player-to-nonexistent-team error case.
+**Tests:** integration tests hitting each endpoint against a real Postgres test database — create-team idempotency (matching `reference_manager.add_team`'s existing behavior of returning the existing row on a duplicate name), roster-attach happy path as the correct captain, roster-attach rejected for a non-captain caller, attach-to-nonexistent-team error case.
 
 ## Phase 3 — Read API and push notification
 
