@@ -1,0 +1,11 @@
+---
+status: accepted
+---
+
+# Backend owns the ingestion workflow as durable state in Postgres; the score bot is a thin relay
+
+Every "interactive prompt" in the existing pipeline (`stats_db_processor_direct.py`) is really a deterministic suggestion computed from data the backend already owns — fuzzy-match candidates and suggested team names from the reference DB, suggested subbing status from a player's primary team, suggested role from their primary role. The bot has no independent basis to generate or judge these; it can only render whatever question the backend produces. That means the backend, not the bot, must own the ingestion workflow's state (which match, which step, what's been answered so far) — otherwise a bot restart mid-ingestion would lose track of an in-progress Match with no way to recover it, since the state never lived anywhere durable.
+
+We considered adopting a durable execution framework (Temporal, Azure Durable Functions) to get replay/timeout/retry semantics for this workflow, but rejected it for now: it's a new piece of infrastructure to run and operate, which cuts against the low-footprint, coarse-grained direction chosen in ADR-0004. Instead, the workflow is modeled as data in the Postgres instance already committed to in ADR-0003: a `pending_matches`-shaped table carrying a status (`extracted`, `awaiting_match_type`, `awaiting_player_match:<player>`, `awaiting_subbing:<player>`, `awaiting_role:<player>`, `ready`, `persisted`) and the answers accumulated so far. `POST /matches` creates the row and returns the first unresolved question (or completes immediately if nothing is ambiguous); `POST /matches/{id}/answer` applies an answer, advances to the next question, and returns it (or completes). The score bot's job shrinks to: render whatever question comes back as Discord UI, and forward the human's answer.
+
+**Consequences:** the backend's ingestion module needs an explicit, ordered definition of "what counts as an unresolved step" so `pending_matches` rows can be resumed correctly regardless of which step failed or was interrupted. Revisiting this decision (moving to a real orchestration framework) stays possible later since the step logic itself doesn't change — only how its durability/replay is implemented.
