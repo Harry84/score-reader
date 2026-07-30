@@ -78,6 +78,7 @@ def test_post_matches_extracts_and_persists_unambiguous_screenshot(
     response = client.post(
         "/matches",
         data={
+            "campaign_id": "campaign-1",
             "turn_id": "turn-1",
             "system_id": str(system_id),
             "match_type": "team",
@@ -116,6 +117,7 @@ def test_post_matches_answer_resumes_a_paused_workflow(mock_extract, pg_conn, cl
     start_response = client.post(
         "/matches",
         data={
+            "campaign_id": "campaign-1",
             "turn_id": "turn-1",
             "system_id": str(system_id),
             "match_type": "team",

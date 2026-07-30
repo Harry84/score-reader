@@ -8,6 +8,9 @@ Backend that extracts Star Wars Squadrons match data from screenshots, maintains
 A single completed game, extracted from one screenshot, with a winner, faction rosters, and per-player stats. This is the existing canonical term in the schema (`matches` table) and stays canonical as the project becomes a Discord backend.
 _Avoid_: Battle (this is what the Discord-facing game calls a Match from its point of view, but the codebase and internal docs use Match consistently — do not introduce Battle as a second term for the same thing).
 
+**Campaign**:
+A time-boxed run of the whole war, owned and defined entirely by the NPC Commander project — same relationship this project has with Turn. This project only persists the campaign's external identifier as a reference on a Match (and on Turn-scoped state generally), so matches from different campaigns are never conflated even if their turn_id values repeat across campaigns. Team/Player identity and the System map are shared across all campaigns; ELO is scoped per-campaign (see docs/adr/0007-campaign-scoped-matches-and-elo.md).
+
 **Turn**:
 The gated leadup-to-a-game period, owned and tracked entirely by the NPC Commander project. This project does not model Turn's lifecycle or gating — it only persists the turn's external identifier as a reference on a Match, so multiple Matches can be grouped by the turn they belong to.
 

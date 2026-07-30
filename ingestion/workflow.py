@@ -223,13 +223,14 @@ def _load_pending_match(pg_conn, pending_match_id):
     with pg_conn.cursor() as cur:
         cur.execute(
             """
-            SELECT turn_id, system_id, match_type, extracted_data, answers
+            SELECT campaign_id, turn_id, system_id, match_type, extracted_data, answers
             FROM pending_matches WHERE id = %s
             """,
             (pending_match_id,),
         )
-        turn_id, system_id, match_type, extracted_data, answers = cur.fetchone()
+        campaign_id, turn_id, system_id, match_type, extracted_data, answers = cur.fetchone()
     return {
+        "campaign_id": campaign_id,
         "turn_id": turn_id,
         "system_id": system_id,
         "match_type": match_type,
@@ -285,15 +286,16 @@ def _persist(pg_conn, pending_match_id, pending_match, resolved):
     with pg_conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO matches (imperial_team_id, rebel_team_id, winner, match_type, turn_id, system_id)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            INSERT INTO matches (imperial_team_id, rebel_team_id, winner, match_type, campaign_id, turn_id, system_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             RETURNING id
             """,
             (
                 team_id_by_faction["imperial"],
                 team_id_by_faction["rebel"],
                 winner,
-                pending_match["match_type"],
+                match_type,
+                pending_match["campaign_id"],
                 pending_match["turn_id"],
                 pending_match["system_id"],
             ),
@@ -365,8 +367,8 @@ def _persist(pg_conn, pending_match_id, pending_match, resolved):
         )
     pg_conn.commit()
 
-    if pending_match["match_type"] == "team":
-        recompute_team_elo(pg_conn)
+    if match_type == "team":
+        recompute_team_elo(pg_conn, pending_match["campaign_id"])
 
     return {
         "status": "persisted",
@@ -400,16 +402,18 @@ def _advance(pg_conn, pending_match_id):
     return _persist(pg_conn, pending_match_id, pending_match, resolved)
 
 
-def start_ingestion(pg_conn, turn_id, system_id, match_type, screenshot_ref, extracted_data):
+def start_ingestion(
+    pg_conn, campaign_id, turn_id, system_id, match_type, screenshot_ref, extracted_data
+):
     with pg_conn.cursor() as cur:
         cur.execute(
             """
             INSERT INTO pending_matches
-                (turn_id, system_id, match_type, screenshot_ref, status, extracted_data, answers)
-            VALUES (%s, %s, %s, %s, 'extracted', %s, '{}'::jsonb)
+                (campaign_id, turn_id, system_id, match_type, screenshot_ref, status, extracted_data, answers)
+            VALUES (%s, %s, %s, %s, %s, 'extracted', %s, '{}'::jsonb)
             RETURNING id
             """,
-            (turn_id, system_id, match_type, screenshot_ref, json.dumps(extracted_data)),
+            (campaign_id, turn_id, system_id, match_type, screenshot_ref, json.dumps(extracted_data)),
         )
         pending_match_id = cur.fetchone()[0]
     pg_conn.commit()

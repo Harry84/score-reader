@@ -1,4 +1,7 @@
-"""Team ELO ladder, recomputed from scratch on each 'team' Match persist.
+"""Team ELO ladder, recomputed from scratch on each 'team' Match persist,
+scoped per campaign (ADR-0007) - each campaign gets its own ladder/history,
+reset to the starting ELO, rather than one continuous ladder across all
+campaigns.
 
 Matches stats_reader.elo_ladder's existing behavior of always replaying the
 full match history rather than updating incrementally (see
@@ -12,7 +15,7 @@ STARTING_ELO = 1000
 K_FACTOR = 32
 
 
-def recompute_team_elo(pg_conn, starting_elo=STARTING_ELO, k_factor=K_FACTOR):
+def recompute_team_elo(pg_conn, campaign_id, starting_elo=STARTING_ELO, k_factor=K_FACTOR):
     with pg_conn.cursor() as cur:
         cur.execute("SELECT id FROM teams")
         team_ids = [row[0] for row in cur.fetchall()]
@@ -21,9 +24,10 @@ def recompute_team_elo(pg_conn, starting_elo=STARTING_ELO, k_factor=K_FACTOR):
             """
             SELECT id, imperial_team_id, rebel_team_id, winner
             FROM matches
-            WHERE match_type = 'team' AND winner IN ('IMPERIAL', 'REBEL')
+            WHERE match_type = 'team' AND campaign_id = %s AND winner IN ('IMPERIAL', 'REBEL')
             ORDER BY match_date, id
-            """
+            """,
+            (campaign_id,),
         )
         matches = cur.fetchall()
 
@@ -89,18 +93,19 @@ def recompute_team_elo(pg_conn, starting_elo=STARTING_ELO, k_factor=K_FACTOR):
     )
 
     with pg_conn.cursor() as cur:
-        cur.execute("DELETE FROM team_elo_history")
-        cur.execute("DELETE FROM team_elo_ratings")
+        cur.execute("DELETE FROM team_elo_history WHERE campaign_id = %s", (campaign_id,))
+        cur.execute("DELETE FROM team_elo_ratings WHERE campaign_id = %s", (campaign_id,))
 
         for rank, row in enumerate(ladder, start=1):
             cur.execute(
                 """
                 INSERT INTO team_elo_ratings
-                    (team_id, rating, matches_played, matches_won, matches_lost, rank)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                    (team_id, campaign_id, rating, matches_played, matches_won, matches_lost, rank)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     row["team_id"],
+                    campaign_id,
                     row["rating"],
                     row["matches_played"],
                     row["matches_won"],
@@ -114,9 +119,9 @@ def recompute_team_elo(pg_conn, starting_elo=STARTING_ELO, k_factor=K_FACTOR):
                 """
                 INSERT INTO team_elo_history
                     (match_id, imperial_team_id, rebel_team_id, imperial_old_rating,
-                     imperial_new_rating, rebel_old_rating, rebel_new_rating, winner)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                     imperial_new_rating, rebel_old_rating, rebel_new_rating, winner, campaign_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
-                history_row,
+                history_row + (campaign_id,),
             )
     pg_conn.commit()

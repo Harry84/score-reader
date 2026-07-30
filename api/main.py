@@ -34,6 +34,7 @@ class AnswerRequest(BaseModel):
 
 @app.post("/matches")
 async def create_match(
+    campaign_id: str = Form(...),
     turn_id: str = Form(...),
     system_id: int = Form(...),
     match_type: str = Form(...),
@@ -47,6 +48,7 @@ async def create_match(
 
     return start_ingestion(
         pg_conn,
+        campaign_id=campaign_id,
         turn_id=turn_id,
         system_id=system_id,
         match_type=match_type,

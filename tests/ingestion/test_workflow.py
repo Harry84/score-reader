@@ -72,6 +72,7 @@ def test_unambiguous_screenshot_is_persisted_immediately(pg_conn):
 
     result = start_ingestion(
         pg_conn,
+        campaign_id="campaign-1",
         turn_id="turn-1",
         system_id=system_id,
         match_type="team",
@@ -174,6 +175,7 @@ def test_unrecognized_player_name_pauses_for_clarification(pg_conn):
 
     result = start_ingestion(
         pg_conn,
+        campaign_id="campaign-1",
         turn_id="turn-1",
         system_id=system_id,
         match_type="team",
@@ -230,6 +232,7 @@ def test_submit_answer_resolves_paused_player_and_persists_match(pg_conn):
 
     paused = start_ingestion(
         pg_conn,
+        campaign_id="campaign-1",
         turn_id="turn-1",
         system_id=system_id,
         match_type="team",
@@ -300,6 +303,7 @@ def test_minority_player_is_auto_flagged_as_subbing_without_a_pause(pg_conn):
 
     result = start_ingestion(
         pg_conn,
+        campaign_id="campaign-1",
         turn_id="turn-1",
         system_id=system_id,
         match_type="team",
@@ -371,6 +375,7 @@ def test_no_clear_majority_pauses_for_team_assignment(pg_conn):
 
     paused = start_ingestion(
         pg_conn,
+        campaign_id="campaign-1",
         turn_id="turn-1",
         system_id=system_id,
         match_type="team",
@@ -438,6 +443,7 @@ def test_player_with_no_primary_role_pauses_for_clarification(pg_conn):
 
     paused = start_ingestion(
         pg_conn,
+        campaign_id="campaign-1",
         turn_id="turn-1",
         system_id=system_id,
         match_type="team",
@@ -502,6 +508,7 @@ def test_pickup_match_uses_generic_teams_and_nulls_player_team_id(pg_conn):
 
     result = start_ingestion(
         pg_conn,
+        campaign_id="campaign-1",
         turn_id="turn-1",
         system_id=system_id,
         match_type="pickup",
@@ -564,6 +571,7 @@ def test_ranked_match_uses_generic_ranked_team_names(pg_conn):
 
     result = start_ingestion(
         pg_conn,
+        campaign_id="campaign-1",
         turn_id="turn-1",
         system_id=system_id,
         match_type="ranked",

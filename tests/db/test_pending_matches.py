@@ -17,11 +17,11 @@ def test_pending_match_round_trips_through_full_status_sequence(pg_conn):
     with pg_conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO pending_matches (turn_id, system_id, match_type, screenshot_ref, status)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO pending_matches (campaign_id, turn_id, system_id, match_type, screenshot_ref, status)
+            VALUES (%s, %s, %s, %s, %s, %s)
             RETURNING id
             """,
-            ("turn-42", system_id, "team", "discord://message/123", "extracted"),
+            ("campaign-1", "turn-42", system_id, "team", "discord://message/123", "extracted"),
         )
         pending_match_id = cur.fetchone()[0]
     pg_conn.commit()
@@ -61,9 +61,9 @@ def test_pending_match_rejects_invalid_status(pg_conn):
         with pg_conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO pending_matches (turn_id, system_id, match_type, screenshot_ref, status)
-                VALUES (%s, %s, %s, %s, %s)
+                INSERT INTO pending_matches (campaign_id, turn_id, system_id, match_type, screenshot_ref, status)
+                VALUES (%s, %s, %s, %s, %s, %s)
                 """,
-                ("turn-42", system_id, "team", "discord://message/123", "bogus_status"),
+                ("campaign-1", "turn-42", system_id, "team", "discord://message/123", "bogus_status"),
             )
     pg_conn.rollback()
