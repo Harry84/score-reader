@@ -13,37 +13,45 @@ Implementation plan for turning this project into the score/stats/ELO backend fo
 
 ## Phase 1 — Ingestion workflow (backend core)
 
-- Bring `score_extractor`'s Claude-vision extraction in as a module/route on the backend API.
-- Implement the `pending_matches` state machine end to end: `extracted → awaiting_match_type → awaiting_player_match:<player> → awaiting_subbing:<player> → awaiting_role:<player> → ready → persisted`, porting the suggestion logic (fuzzy match candidates, subbing inference, role defaults) from `reference_manager.py` / `stats_db_processor_direct.py`.
-- `POST /matches` (turn_id, system_id, image) → creates the row, returns first question or completes.
+- Backend API runs on FastAPI (new dependency; not Azure Functions — that binding stays specific to the existing `score_extractor` Function and isn't reused here, since a plain-container FastAPI app fits ADR-0004's coarse-grained, docker-compose-native shape better).
+- Bring `score_extractor`'s Claude-vision extraction in as a module/route on the backend API, but keep it behind a seam: the ingestion workflow core operates on already-extracted JSON, decoupled from the real vision call (mocked in tests, same pattern the existing `test_score_extractor.py` already uses).
+- Implement the `pending_matches` state machine: `extracted → awaiting_player_match:<player> → awaiting_subbing:<player> → awaiting_role:<player> → ready → persisted`, porting the suggestion logic (fuzzy match candidates, subbing inference, role defaults) from `reference_manager.py` / `stats_db_processor_direct.py`. `turn_id`, `system_id`, and `match_type` are required inputs at ingestion start, not ambiguous steps — the score bot always knows these from context (which command/channel triggered it), and match_type in particular (team/pickup/ranked) is the campaign project's call to make if it ever needs disambiguating, not something this project's data can infer.
+- `POST /matches` (turn_id, system_id, match_type, image) → creates the `pending_matches` row, returns first question or completes.
 - `POST /matches/{id}/answer` → applies an answer, advances, returns next question or completes.
 - On reaching `ready`: persist Match + player_stats, recompute stats/ELO synchronously (agreed default), reusing `elo_ladder.py`/`player_elo_ladder.py`/`role_elo_calculator.py` logic against Postgres.
 
-**Tests:** unit tests per state transition (given a known-ambiguous name, correct candidates are returned; given an answer, correct next state); one full happy-path integration test (unambiguous screenshot → persisted Match + updated ELO in one call); one deliberately-ambiguous fixture that pauses at the expected step and resumes correctly on answer.
+**Tests:** first vertical slice is the fully-unambiguous happy path (every player exactly matches an existing `ref_players` row, primary teams cleanly account for both rosters) going straight from `extracted` to `ready`/`persisted` with no pause at all. Then one slice per ambiguity type (unrecognized player name, uncertain subbing, uncertain role), each confirming the workflow pauses at the right step with the right candidates and resumes correctly on answer. HTTP-layer tests (via FastAPI's `TestClient`) come after the workflow core is solid.
 
-## Phase 2 — Read API and push notification
+## Phase 2 — Team onboarding API
+
+- Endpoints backing the score bot's team-admin commands (Phase 4), reusing the reference DB rather than a new roster concept (CONTEXT.md: Team) — `POST /teams` (create/find by name), `POST /teams/{id}/players` (attach a player, canonical or new, with primary role), `GET /teams`/`GET /teams/{id}` for lookups the bot needs to render.
+- This has to land before real Discord usage of Phase 1 is possible — ingestion's identity resolution depends on rosters already existing in `ref_teams`/`ref_players` — but is being built after the ingestion core so the workflow's assumptions about what "resolved" reference data looks like are already settled by real tests, not guessed at.
+
+**Tests:** integration tests hitting each endpoint against a real Postgres test database — create-team idempotency (matching `reference_manager.add_team`'s existing behavior of returning the existing row on a duplicate name), attach-player happy path, attach-player-to-nonexistent-team error case.
+
+## Phase 3 — Read API and push notification
 
 - Read endpoints the campaign project needs: latest Match for `(turn_id, system_id)`, Team roster, player/team stats and ELO ladder.
 - Webhook client: once a Match reaches `persisted`, POST a summary to the campaign project's configured webhook URL (shared secret auth, per ADR-0001).
 
 **Tests:** contract tests for each read endpoint against seeded fixtures; webhook call tested against a mock receiver, asserting payload shape and behavior on failure/timeout.
 
-## Phase 3 — Score bot
+## Phase 4 — Score bot
 
 - New bot process/container (ADR-0001), scoped to the two faction channels.
-- Team-admin commands (create team, add/remove player) calling the backend API — a thin Discord-native wrapper over `reference_manager` functionality.
+- Team-admin commands (create team, add/remove player) calling the Phase 2 API — a thin Discord-native wrapper, not new logic.
 - Screenshot listener: detect an image attachment, `POST /matches`, render whatever question comes back as Discord UI (buttons/reactions/reply) if the workflow pauses (ADR-0002), relay the human's answer to `POST /matches/{id}/answer`, react ✅ on `persisted` / ❌ with the error on failure.
 
 **Tests:** bot logic unit-tested against a mocked backend API (question-rendering, answer-relaying); manual end-to-end test posting a real screenshot into a test Discord server.
 
-## Phase 4 — Compose and deployment
+## Phase 5 — Compose and deployment
 
 - `docker-compose.yml` wiring Postgres + backend + score bot; host-mapped ports and env-var base URLs for cross-repo calls (agreed: no shared Docker network across repos).
 - Decide the fate of the GitHub Pages static-site export in light of retiring the old CLI flow — likely a scheduled job that calls the new read API to regenerate the same JSON reports, rather than reading SQLite directly.
 
 **Tests:** compose smoke test — all containers healthy, backend reachable, migrations applied on a clean volume.
 
-## Phase 5 — Campaign integration validation
+## Phase 6 — Campaign integration validation
 
 - End-to-end test against a stub (or the real thing, if ready) of the campaign project's webhook receiver, confirming the push-notification contract.
 - Validate the seeded `systems` lookup against the campaign doc's 8 systems (Nadiri Dockyards, Esseles, Zavian Abyss, Galitan, Sissubo, Yavin Prime, the resolved 8th/Fostar Haven question, The Maw).
