@@ -7,25 +7,19 @@ start_ingestion() used everywhere else.
 
 import os
 
-import psycopg2
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, File, Form, UploadFile
 from pydantic import BaseModel
 
+from api.dependencies import get_pg_conn
+from api.teams import router as teams_router
 from ingestion.extraction import extract_from_image_bytes
 from ingestion.workflow import start_ingestion, submit_answer
 
 load_dotenv()
 
 app = FastAPI(title="Squadrons Backend")
-
-
-def get_pg_conn():
-    conn = psycopg2.connect(os.environ["DATABASE_URL"])
-    try:
-        yield conn
-    finally:
-        conn.close()
+app.include_router(teams_router)
 
 
 class AnswerRequest(BaseModel):
