@@ -1,3 +1,5 @@
+import pytest
+
 from db.migrate_runner import apply_schema
 from ingestion.workflow import start_ingestion, submit_answer
 
@@ -121,6 +123,20 @@ def test_unambiguous_screenshot_is_persisted_immediately(pg_conn):
         assert cur.fetchone() == (1, 0)
         cur.execute("SELECT wins, losses FROM teams WHERE id = %s", (row_reb_team,))
         assert cur.fetchone() == (0, 1)
+
+    # ELO recompute fires synchronously as part of persist (both start at 1000).
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "SELECT rating FROM team_elo_ratings WHERE team_id = %s", (row_imp_team,)
+        )
+        (imp_rating,) = cur.fetchone()
+        cur.execute(
+            "SELECT rating FROM team_elo_ratings WHERE team_id = %s", (row_reb_team,)
+        )
+        (reb_rating,) = cur.fetchone()
+
+    assert float(imp_rating) == pytest.approx(1016.0)
+    assert float(reb_rating) == pytest.approx(984.0)
 
 
 def test_unrecognized_player_name_pauses_for_clarification(pg_conn):

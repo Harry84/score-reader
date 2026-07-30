@@ -12,6 +12,8 @@ import hashlib
 import json
 from collections import Counter
 
+from stats.team_elo import recompute_team_elo
+
 
 def _player_hash(name):
     return hashlib.sha256(name.encode()).hexdigest()[:16]
@@ -329,6 +331,9 @@ def _persist(pg_conn, pending_match_id, pending_match, resolved):
             (pending_match_id,),
         )
     pg_conn.commit()
+
+    if pending_match["match_type"] == "team":
+        recompute_team_elo(pg_conn)
 
     return {
         "status": "persisted",
