@@ -48,8 +48,9 @@ Implementation plan for turning this project into the score/stats/ELO backend fo
 
 - `docker-compose.yml` wiring Postgres + backend + score bot; host-mapped ports and env-var base URLs for cross-repo calls (agreed: no shared Docker network across repos).
 - Decide the fate of the GitHub Pages static-site export in light of retiring the old CLI flow — likely a scheduled job that calls the new read API to regenerate the same JSON reports, rather than reading SQLite directly.
+- Known gap to close here: `generate_player_roles_json.py` (player→role lookup for labeling leaderboard rows) and `generate_role_reports.py` (`player_performance_role_*.json` — kills/deaths/score aggregates by role and match type) were never ELO prerequisites (Phase 1), but they're still real reporting outputs the old web viz depended on and nothing in the new system produces yet. Needs porting to Postgres queries against `player_stats`/`ref_players`, exposed through the read API (Phase 3) rather than written as files directly.
 
-**Tests:** compose smoke test — all containers healthy, backend reachable, migrations applied on a clean volume.
+**Tests:** compose smoke test — all containers healthy, backend reachable, migrations applied on a clean volume. Role-report queries get their own tests against seeded fixtures (expected aggregates hand-computed, not re-derived from the query itself).
 
 ## Phase 6 — Campaign integration validation
 
