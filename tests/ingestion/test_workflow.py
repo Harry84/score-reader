@@ -238,3 +238,205 @@ def test_submit_answer_resolves_paused_player_and_persists_match(pg_conn):
             (paused["pending_match_id"],),
         )
         assert cur.fetchone()[0] == "persisted"
+
+
+def test_minority_player_is_auto_flagged_as_subbing_without_a_pause(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    imperial_team_id = _make_ref_team(pg_conn, "181st")
+    death_squadron_id = _make_ref_team(pg_conn, "Death Squadron")
+    rebel_team_id = _make_ref_team(pg_conn, "Rogue Squadron")
+    _make_ref_player(pg_conn, "Vader", imperial_team_id, "Flex")
+    _make_ref_player(pg_conn, "Tarkin", imperial_team_id, "Support")
+    # Piett's primary team is Death Squadron, but he's subbing for 181st here.
+    _make_ref_player(pg_conn, "Piett", death_squadron_id, "Farmer")
+    _make_ref_player(pg_conn, "Wedge", rebel_team_id, "Flex")
+    _make_ref_player(pg_conn, "Luke", rebel_team_id, "Support")
+    pg_conn.commit()
+
+    system_id = _get_system_id(pg_conn)
+
+    extracted_data = {
+        "match_result": "IMPERIAL VICTORY",
+        "teams": {
+            "imperial": {
+                "players": [
+                    _player("Vader", "Titan One", 1675, 4, 2, 1, 18, 30139),
+                    _player("Tarkin", "Titan Two", 900, 1, 3, 2, 5, 0),
+                    _player("Piett", "Titan Three", 800, 0, 1, 3, 2, 0),
+                ]
+            },
+            "rebel": {
+                "players": [
+                    _player("Wedge", "Vanguard One", 1200, 2, 4, 0, 10, 0),
+                    _player("Luke", "Vanguard Two", 1400, 3, 1, 2, 12, 0),
+                ]
+            },
+        },
+    }
+
+    result = start_ingestion(
+        pg_conn,
+        turn_id="turn-1",
+        system_id=system_id,
+        match_type="team",
+        screenshot_ref="discord://message/101",
+        extracted_data=extracted_data,
+    )
+
+    assert result["status"] == "persisted"
+
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "SELECT imperial_team_id FROM matches WHERE id = %s", (result["match_id"],)
+        )
+        (match_imperial_team_id,) = cur.fetchone()
+        cur.execute("SELECT id FROM teams WHERE reference_id = %s", (imperial_team_id,))
+        (expected_team_row_id,) = cur.fetchone()
+
+    assert match_imperial_team_id == expected_team_row_id
+
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "SELECT player_name, is_subbing FROM player_stats WHERE match_id = %s ORDER BY player_name",
+            (result["match_id"],),
+        )
+        rows = cur.fetchall()
+
+    assert rows == [
+        ("Luke", False),
+        ("Piett", True),
+        ("Tarkin", False),
+        ("Vader", False),
+        ("Wedge", False),
+    ]
+
+
+def test_no_clear_majority_pauses_for_team_assignment(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    team_a_id = _make_ref_team(pg_conn, "181st")
+    team_b_id = _make_ref_team(pg_conn, "Death Squadron")
+    rebel_team_id = _make_ref_team(pg_conn, "Rogue Squadron")
+    # A genuine 2-2 tie: no faction majority to infer from.
+    _make_ref_player(pg_conn, "Vader", team_a_id, "Flex")
+    _make_ref_player(pg_conn, "Tarkin", team_b_id, "Support")
+    _make_ref_player(pg_conn, "Wedge", rebel_team_id, "Flex")
+    _make_ref_player(pg_conn, "Luke", rebel_team_id, "Support")
+    pg_conn.commit()
+
+    system_id = _get_system_id(pg_conn)
+
+    extracted_data = {
+        "match_result": "IMPERIAL VICTORY",
+        "teams": {
+            "imperial": {
+                "players": [
+                    _player("Vader", "Titan One", 1675, 4, 2, 1, 18, 30139),
+                    _player("Tarkin", "Titan Two", 900, 1, 3, 2, 5, 0),
+                ]
+            },
+            "rebel": {
+                "players": [
+                    _player("Wedge", "Vanguard One", 1200, 2, 4, 0, 10, 0),
+                    _player("Luke", "Vanguard Two", 1400, 3, 1, 2, 12, 0),
+                ]
+            },
+        },
+    }
+
+    paused = start_ingestion(
+        pg_conn,
+        turn_id="turn-1",
+        system_id=system_id,
+        match_type="team",
+        screenshot_ref="discord://message/202",
+        extracted_data=extracted_data,
+    )
+
+    assert paused["status"] == "awaiting_team_assignment:imperial"
+    assert paused["question"]["type"] == "team_assignment"
+    assert paused["question"]["faction"] == "imperial"
+    assert {c["id"] for c in paused["question"]["candidates"]} == {team_a_id, team_b_id}
+
+    result = submit_answer(
+        pg_conn, paused["pending_match_id"], {"ref_team_id": team_a_id}
+    )
+
+    assert result["status"] == "persisted"
+
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "SELECT player_name, is_subbing FROM player_stats WHERE match_id = %s ORDER BY player_name",
+            (result["match_id"],),
+        )
+        rows = cur.fetchall()
+
+    assert rows == [
+        ("Luke", False),
+        ("Tarkin", True),
+        ("Vader", False),
+        ("Wedge", False),
+    ]
+
+
+def test_player_with_no_primary_role_pauses_for_clarification(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    imperial_team_id = _make_ref_team(pg_conn, "181st")
+    rebel_team_id = _make_ref_team(pg_conn, "Rogue Squadron")
+    _make_ref_player(pg_conn, "Vader", imperial_team_id, None)
+    _make_ref_player(pg_conn, "Tarkin", imperial_team_id, "Support")
+    _make_ref_player(pg_conn, "Wedge", rebel_team_id, "Flex")
+    _make_ref_player(pg_conn, "Luke", rebel_team_id, "Support")
+    pg_conn.commit()
+
+    system_id = _get_system_id(pg_conn)
+
+    extracted_data = {
+        "match_result": "IMPERIAL VICTORY",
+        "teams": {
+            "imperial": {
+                "players": [
+                    _player("Vader", "Titan One", 1675, 4, 2, 1, 18, 30139),
+                    _player("Tarkin", "Titan Two", 900, 1, 3, 2, 5, 0),
+                ]
+            },
+            "rebel": {
+                "players": [
+                    _player("Wedge", "Vanguard One", 1200, 2, 4, 0, 10, 0),
+                    _player("Luke", "Vanguard Two", 1400, 3, 1, 2, 12, 0),
+                ]
+            },
+        },
+    }
+
+    paused = start_ingestion(
+        pg_conn,
+        turn_id="turn-1",
+        system_id=system_id,
+        match_type="team",
+        screenshot_ref="discord://message/303",
+        extracted_data=extracted_data,
+    )
+
+    assert paused["status"] == "awaiting_role:Vader"
+    assert paused["question"] == {
+        "type": "role",
+        "player_name": "Vader",
+        "candidates": ["Farmer", "Flex", "Support"],
+    }
+
+    result = submit_answer(pg_conn, paused["pending_match_id"], {"role": "Flex"})
+
+    assert result["status"] == "persisted"
+
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "SELECT role FROM player_stats WHERE match_id = %s AND player_name = 'Vader'",
+            (result["match_id"],),
+        )
+        assert cur.fetchone()[0] == "Flex"

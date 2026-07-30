@@ -10,6 +10,7 @@ assignment within a faction, subbing, role overrides.
 import difflib
 import hashlib
 import json
+from collections import Counter
 
 
 def _player_hash(name):
@@ -85,11 +86,55 @@ def _get_or_create_player(pg_conn, ref_player_id):
         return cur.fetchone()[0], canonical_name
 
 
-def _resolve_faction(pg_conn, faction_players, player_resolutions):
+def _majority_team_id(resolved_players):
+    """The most common primary_team_id among a faction's resolved players, or
+    None if there's no clear majority (a tie, or nobody has a primary team)."""
+    counts = Counter(
+        rp["ref_player"]["primary_team_id"]
+        for rp in resolved_players
+        if rp["ref_player"]["primary_team_id"] is not None
+    )
+    if not counts:
+        return None
+    ranked = counts.most_common()
+    top_id, top_count = ranked[0]
+    if len(ranked) > 1 and ranked[1][1] == top_count:
+        return None
+    return top_id
+
+
+def _team_candidates(pg_conn, resolved_players):
+    ref_team_ids = {
+        rp["ref_player"]["primary_team_id"]
+        for rp in resolved_players
+        if rp["ref_player"]["primary_team_id"] is not None
+    }
+    if not ref_team_ids:
+        return []
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "SELECT id, name FROM ref_teams WHERE id = ANY(%s)", (list(ref_team_ids),)
+        )
+        rows = cur.fetchall()
+    return [{"id": i, "name": n} for i, n in rows]
+
+
+ROLES = ["Farmer", "Flex", "Support"]
+
+
+def _resolve_faction(
+    pg_conn,
+    faction,
+    faction_players,
+    match_type,
+    player_resolutions,
+    team_assignments,
+    role_overrides,
+):
     """Returns (resolved, pause). Exactly one of the two is not None: resolved
-    when every player and the faction's team assignment are unambiguous, or
-    pause describing the first ambiguity hit, to be applied to the
-    pending_matches row by the caller."""
+    when every player, their role, and the faction's team assignment are
+    unambiguous, or pause describing the first ambiguity hit, to be applied
+    to the pending_matches row by the caller."""
     resolved_players = []
     for p in faction_players:
         override = player_resolutions.get(p["player"])
@@ -109,15 +154,45 @@ def _resolve_faction(pg_conn, faction_players, player_resolutions):
                 },
             }
             return None, pause
-        resolved_players.append({**p, "ref_player": ref_player})
 
-    primary_team_ids = {rp["ref_player"]["primary_team_id"] for rp in resolved_players}
-    if len(primary_team_ids) != 1 or None in primary_team_ids:
+        role = role_overrides.get(p["player"], ref_player["primary_role"])
+        if role is None:
+            pause = {
+                "status": f"awaiting_role:{p['player']}",
+                "question": {
+                    "type": "role",
+                    "player_name": p["player"],
+                    "candidates": ROLES,
+                },
+            }
+            return None, pause
+
+        resolved_players.append({**p, "ref_player": ref_player, "role": role})
+
+    if match_type != "team":
+        # Pickup/ranked matches don't associate players with a team at all
+        # (existing behavior: player_stats.team_id stays NULL for these).
+        # Generic per-match team naming for pickup/ranked is not yet ported.
         raise NotImplementedError(
-            "Ambiguous or missing team assignment - not yet implemented"
+            f"match_type '{match_type}' team assignment not yet implemented"
         )
 
-    return {"players": resolved_players, "ref_team_id": primary_team_ids.pop()}, None
+    if faction in team_assignments:
+        ref_team_id = team_assignments[faction]
+    else:
+        ref_team_id = _majority_team_id(resolved_players)
+        if ref_team_id is None:
+            pause = {
+                "status": f"awaiting_team_assignment:{faction}",
+                "question": {
+                    "type": "team_assignment",
+                    "faction": faction,
+                    "candidates": _team_candidates(pg_conn, resolved_players),
+                },
+            }
+            return None, pause
+
+    return {"players": resolved_players, "ref_team_id": ref_team_id}, None
 
 
 def _load_pending_match(pg_conn, pending_match_id):
@@ -185,11 +260,10 @@ def _persist(pg_conn, pending_match_id, pending_match, resolved):
                 player_id, canonical_name = _get_or_create_player(
                     pg_conn, rp["ref_player"]["id"]
                 )
-                # data["ref_team_id"] is the single primary team every player in
-                # this faction agreed on (enforced in _resolve_faction), so
-                # is_subbing is always False today; written generally for when
-                # partial subbing is handled in a later slice.
-                is_subbing = rp["ref_player"]["primary_team_id"] != data["ref_team_id"]
+                is_subbing = (
+                    pending_match["match_type"] == "team"
+                    and rp["ref_player"]["primary_team_id"] != data["ref_team_id"]
+                )
                 cur.execute(
                     """
                     INSERT INTO player_stats
@@ -206,7 +280,7 @@ def _persist(pg_conn, pending_match_id, pending_match, resolved):
                         match_team_id,
                         faction.upper(),
                         rp["position"],
-                        rp["ref_player"]["primary_role"],
+                        rp["role"],
                         rp["score"],
                         rp["kills"],
                         rp["deaths"],
@@ -232,14 +306,21 @@ def _persist(pg_conn, pending_match_id, pending_match, resolved):
 
 def _advance(pg_conn, pending_match_id):
     pending_match = _load_pending_match(pg_conn, pending_match_id)
-    player_resolutions = pending_match["answers"].get("player_resolutions", {})
+    answers = pending_match["answers"]
+    player_resolutions = answers.get("player_resolutions", {})
+    team_assignments = answers.get("team_assignments", {})
+    role_overrides = answers.get("role_overrides", {})
 
     resolved = {}
     for faction in ("imperial", "rebel"):
         faction_resolved, pause = _resolve_faction(
             pg_conn,
+            faction,
             pending_match["extracted_data"]["teams"][faction]["players"],
+            pending_match["match_type"],
             player_resolutions,
+            team_assignments,
+            role_overrides,
         )
         if pause is not None:
             return _pause(pg_conn, pending_match_id, pause)
@@ -277,6 +358,14 @@ def submit_answer(pg_conn, pending_match_id, answer):
         player_name = status[len("awaiting_player_match:") :]
         player_resolutions = answers.setdefault("player_resolutions", {})
         player_resolutions[player_name] = answer
+    elif status.startswith("awaiting_team_assignment:"):
+        faction = status[len("awaiting_team_assignment:") :]
+        team_assignments = answers.setdefault("team_assignments", {})
+        team_assignments[faction] = answer["ref_team_id"]
+    elif status.startswith("awaiting_role:"):
+        player_name = status[len("awaiting_role:") :]
+        role_overrides = answers.setdefault("role_overrides", {})
+        role_overrides[player_name] = answer["role"]
     else:
         raise NotImplementedError(f"Cannot answer status '{status}' yet")
 

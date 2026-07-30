@@ -26,11 +26,13 @@ def test_pending_match_round_trips_through_full_status_sequence(pg_conn):
         pending_match_id = cur.fetchone()[0]
     pg_conn.commit()
 
-    # awaiting_match_type is not in this sequence: match_type is a required
-    # ingestion input, not an ambiguous workflow step (ROADMAP Phase 1).
+    # awaiting_match_type and awaiting_subbing aren't in this sequence: match_type
+    # is a required ingestion input, and subbing is auto-computed once team
+    # assignment resolves (majority vote or awaiting_team_assignment) - neither
+    # ended up needing its own pause (ROADMAP Phase 1).
     sequence = [
         "awaiting_player_match:PlayerX",
-        "awaiting_subbing:PlayerX",
+        "awaiting_team_assignment:imperial",
         "awaiting_role:PlayerX",
         "ready",
         "persisted",
