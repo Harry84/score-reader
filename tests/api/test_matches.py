@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 from db.migrate_runner import apply_schema
 
 
@@ -55,7 +57,10 @@ def _unambiguous_extracted_data():
     }
 
 
-def test_post_matches_persists_unambiguous_screenshot(pg_conn, client):
+@patch("api.main.extract_from_image_bytes")
+def test_post_matches_extracts_and_persists_unambiguous_screenshot(
+    mock_extract, pg_conn, client
+):
     apply_schema(pg_conn)
     pg_conn.commit()
 
@@ -68,25 +73,29 @@ def test_post_matches_persists_unambiguous_screenshot(pg_conn, client):
     pg_conn.commit()
 
     system_id = _get_system_id(pg_conn)
+    mock_extract.return_value = _unambiguous_extracted_data()
 
     response = client.post(
         "/matches",
-        json={
+        data={
             "turn_id": "turn-1",
-            "system_id": system_id,
+            "system_id": str(system_id),
             "match_type": "team",
             "screenshot_ref": "discord://message/123",
-            "extracted_data": _unambiguous_extracted_data(),
         },
+        files={"image": ("screenshot.png", b"fake-screenshot-bytes", "image/png")},
     )
 
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "persisted"
     assert "match_id" in body
+    mock_extract.assert_called_once()
+    assert mock_extract.call_args.args[0] == b"fake-screenshot-bytes"
 
 
-def test_post_matches_answer_resumes_a_paused_workflow(pg_conn, client):
+@patch("api.main.extract_from_image_bytes")
+def test_post_matches_answer_resumes_a_paused_workflow(mock_extract, pg_conn, client):
     apply_schema(pg_conn)
     pg_conn.commit()
 
@@ -102,16 +111,17 @@ def test_post_matches_answer_resumes_a_paused_workflow(pg_conn, client):
 
     extracted_data = _unambiguous_extracted_data()
     extracted_data["teams"]["imperial"]["players"][0]["player"] = "Vadar"
+    mock_extract.return_value = extracted_data
 
     start_response = client.post(
         "/matches",
-        json={
+        data={
             "turn_id": "turn-1",
-            "system_id": system_id,
+            "system_id": str(system_id),
             "match_type": "team",
             "screenshot_ref": "discord://message/456",
-            "extracted_data": extracted_data,
         },
+        files={"image": ("screenshot.png", b"fake-screenshot-bytes", "image/png")},
     )
 
     assert start_response.status_code == 200
