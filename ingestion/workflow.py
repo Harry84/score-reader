@@ -228,8 +228,22 @@ def _pause(pg_conn, pending_match_id, pause):
     }
 
 
+def _normalize_winner(match_result):
+    """Matches stats_reader.modules.match_processor's normalization: the raw
+    extracted match_result text ("IMPERIAL VICTORY") becomes the plain
+    faction name stored in matches.winner and relied on by ELO/report
+    queries elsewhere in the codebase."""
+    upper = match_result.upper()
+    if "IMPERIAL" in upper or "EMPIRE" in upper:
+        return "IMPERIAL"
+    if "REBEL" in upper or "NEW REPUBLIC" in upper or "REPUBLIC" in upper:
+        return "REBEL"
+    return "UNKNOWN"
+
+
 def _persist(pg_conn, pending_match_id, pending_match, resolved):
     extracted_data = pending_match["extracted_data"]
+    winner = _normalize_winner(extracted_data["match_result"])
 
     team_id_by_faction = {
         faction: _get_or_create_team(pg_conn, resolved[faction]["ref_team_id"])
@@ -246,13 +260,32 @@ def _persist(pg_conn, pending_match_id, pending_match, resolved):
             (
                 team_id_by_faction["imperial"],
                 team_id_by_faction["rebel"],
-                extracted_data["match_result"],
+                winner,
                 pending_match["match_type"],
                 pending_match["turn_id"],
                 pending_match["system_id"],
             ),
         )
         match_id = cur.fetchone()[0]
+
+        if winner == "IMPERIAL":
+            cur.execute(
+                "UPDATE teams SET wins = wins + 1 WHERE id = %s",
+                (team_id_by_faction["imperial"],),
+            )
+            cur.execute(
+                "UPDATE teams SET losses = losses + 1 WHERE id = %s",
+                (team_id_by_faction["rebel"],),
+            )
+        elif winner == "REBEL":
+            cur.execute(
+                "UPDATE teams SET wins = wins + 1 WHERE id = %s",
+                (team_id_by_faction["rebel"],),
+            )
+            cur.execute(
+                "UPDATE teams SET losses = losses + 1 WHERE id = %s",
+                (team_id_by_faction["imperial"],),
+            )
 
         for faction, data in resolved.items():
             match_team_id = team_id_by_faction[faction]

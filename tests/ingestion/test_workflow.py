@@ -90,7 +90,7 @@ def test_unambiguous_screenshot_is_persisted_immediately(pg_conn):
         )
         winner, match_type, turn_id, row_system_id, row_imp_team, row_reb_team = cur.fetchone()
 
-    assert winner == "IMPERIAL VICTORY"
+    assert winner == "IMPERIAL"
     assert match_type == "team"
     assert turn_id == "turn-1"
     assert row_system_id == system_id
@@ -115,6 +115,12 @@ def test_unambiguous_screenshot_is_persisted_immediately(pg_conn):
         ("Vader", "IMPERIAL", "Flex", 1675, 4, False),
         ("Wedge", "REBEL", "Flex", 1200, 2, False),
     ]
+
+    with pg_conn.cursor() as cur:
+        cur.execute("SELECT wins, losses FROM teams WHERE id = %s", (row_imp_team,))
+        assert cur.fetchone() == (1, 0)
+        cur.execute("SELECT wins, losses FROM teams WHERE id = %s", (row_reb_team,))
+        assert cur.fetchone() == (0, 1)
 
 
 def test_unrecognized_player_name_pauses_for_clarification(pg_conn):
