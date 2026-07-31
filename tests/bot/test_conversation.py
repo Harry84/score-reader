@@ -29,14 +29,6 @@ def test_render_player_match_question_with_no_candidates():
     assert "no close matches" in text
 
 
-def test_render_role_question_lists_candidates():
-    question = {"type": "role", "player_name": "Wedge", "candidates": ["Farmer", "Flex", "Support"]}
-    text = render_question(question)
-    assert "1. Farmer" in text
-    assert "2. Flex" in text
-    assert "3. Support" in text
-
-
 def test_render_team_assignment_question_lists_candidates():
     question = {
         "type": "team_assignment",
@@ -64,22 +56,6 @@ def test_parse_answer_team_assignment_selects_candidate_by_number():
         "candidates": [{"id": 5, "name": "Rogue Squadron"}],
     }
     assert parse_answer(question, "1") == {"ref_team_id": 5}
-
-
-def test_parse_answer_role_accepts_name_case_insensitive():
-    question = {"type": "role", "player_name": "Wedge", "candidates": ["Farmer", "Flex", "Support"]}
-    assert parse_answer(question, "flex") == {"role": "Flex"}
-
-
-def test_parse_answer_role_accepts_number():
-    question = {"type": "role", "player_name": "Wedge", "candidates": ["Farmer", "Flex", "Support"]}
-    assert parse_answer(question, "2") == {"role": "Flex"}
-
-
-def test_parse_answer_role_rejects_unknown_role():
-    question = {"type": "role", "player_name": "Wedge", "candidates": ["Farmer", "Flex", "Support"]}
-    with pytest.raises(ValueError):
-        parse_answer(question, "Pilot")
 
 
 def test_parse_answer_rejects_out_of_range_number():
@@ -201,6 +177,12 @@ def test_parse_edit_updates_keeps_name_and_role_as_strings():
         "name": "Tarkin",
         "role": "Support",
     }
+
+
+def test_parse_edit_updates_role_none_sentinel_clears_role():
+    assert parse_edit_updates(["role=none"]) == {"role": None}
+    assert parse_edit_updates(["role=NULL"]) == {"role": None}
+    assert parse_edit_updates(["role=-"]) == {"role": None}
 
 
 def test_parse_edit_updates_rejects_unknown_field():

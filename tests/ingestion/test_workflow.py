@@ -415,7 +415,7 @@ def test_no_clear_majority_pauses_for_team_assignment(pg_conn):
     ]
 
 
-def test_player_with_no_primary_role_pauses_for_clarification(pg_conn):
+def test_player_with_no_primary_role_persists_directly_with_null_role(pg_conn):
     apply_schema(pg_conn)
     pg_conn.commit()
 
@@ -447,7 +447,7 @@ def test_player_with_no_primary_role_pauses_for_clarification(pg_conn):
         },
     }
 
-    paused = start_ingestion(
+    result = start_ingestion(
         pg_conn,
         campaign_id="campaign-1",
         turn_id="turn-1",
@@ -457,23 +457,42 @@ def test_player_with_no_primary_role_pauses_for_clarification(pg_conn):
         extracted_data=extracted_data,
     )
 
-    assert paused["status"] == "awaiting_role:Vader"
-    assert paused["question"] == {
-        "type": "role",
-        "player_name": "Vader",
-        "candidates": ["Farmer", "Flex", "Support"],
-    }
-
-    result = submit_answer(pg_conn, paused["pending_match_id"], {"role": "Flex"})
-
     assert result["status"] == "persisted"
+    vader = next(p for p in result["players"]["imperial"] if p["player"] == "Vader")
+    assert vader["role"] is None
 
     with pg_conn.cursor() as cur:
         cur.execute(
             "SELECT role FROM player_stats WHERE match_id = %s AND player_name = 'Vader'",
             (result["match_id"],),
         )
-        assert cur.fetchone()[0] == "Flex"
+        assert cur.fetchone()[0] is None
+
+
+def test_edit_match_player_can_set_and_clear_role(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    result = _persist_simple_team_match(pg_conn)
+    match_id = result["match_id"]
+
+    updated = edit_match_player(pg_conn, match_id, "Vader", {"role": "support"})
+    vader = next(p for p in updated["players"]["imperial"] if p["player"] == "Vader")
+    assert vader["role"] == "Support"
+
+    cleared = edit_match_player(pg_conn, match_id, "Vader", {"role": None})
+    vader = next(p for p in cleared["players"]["imperial"] if p["player"] == "Vader")
+    assert vader["role"] is None
+
+
+def test_edit_match_player_rejects_invalid_role(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    result = _persist_simple_team_match(pg_conn)
+
+    with pytest.raises(ValueError):
+        edit_match_player(pg_conn, result["match_id"], "Vader", {"role": "Pilot"})
 
 
 def test_pickup_match_uses_generic_teams_and_nulls_player_team_id(pg_conn):

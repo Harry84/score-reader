@@ -38,12 +38,6 @@ def render_question(question):
             lines.append("Reply with the number.")
         return "\n".join(lines)
 
-    if qtype == "role":
-        lines = [f"What role does '{question['player_name']}' play?"]
-        lines += [f"  {i}. {c}" for i, c in enumerate(question["candidates"], start=1)]
-        lines.append("Reply with the role name or its number.")
-        return "\n".join(lines)
-
     if qtype == "team_assignment":
         lines = [f"Which team is the {question['faction']} faction?"]
         lines += [f"  {i}. {c['name']}" for i, c in enumerate(question["candidates"], start=1)]
@@ -80,14 +74,6 @@ def parse_answer(question, text):
     if qtype == "team_assignment":
         return {"ref_team_id": candidates[_parse_index(text, len(candidates))]["id"]}
 
-    if qtype == "role":
-        if text.isdigit():
-            return {"role": candidates[_parse_index(text, len(candidates))]}
-        matched = next((c for c in candidates if c.lower() == text.lower()), None)
-        if matched is None:
-            raise ValueError(f"'{text}' isn't a valid role. Choose one of: {', '.join(candidates)}")
-        return {"role": matched}
-
     raise ValueError(f"Don't know how to answer a '{qtype}' question yet.")
 
 
@@ -97,12 +83,18 @@ def parse_answer(question, text):
 EDITABLE_PLAYER_FIELDS = {"name", "role", "score", "kills", "deaths", "assists", "ai_kills", "cap_ship_damage"}
 NUMERIC_PLAYER_FIELDS = {"score", "kills", "deaths", "assists", "ai_kills", "cap_ship_damage"}
 
+# role=none (or null/-) clears a match's role entirely, e.g. a genuine
+# multi-role match that doesn't fit one bucket - "no role" is a legitimate
+# persisted state (ingestion.workflow no longer pauses to force one), not
+# an error.
+NO_ROLE_SENTINELS = {"none", "null", "-"}
+
 # One example value per editable field, used by render_help() - kept next to
 # EDITABLE_PLAYER_FIELDS so a new field can't be added without also getting
 # a help example.
 FIELD_EXAMPLES = {
     "name": "Tarkin",
-    "role": "Support",
+    "role": "Support (or 'none' to clear it)",
     "score": "1999",
     "kills": "5",
     "deaths": "2",
@@ -147,7 +139,9 @@ def parse_edit_updates(tokens):
             raise ValueError(
                 f"Can't edit '{field}'. Editable fields: {', '.join(sorted(EDITABLE_PLAYER_FIELDS))}"
             )
-        if field in NUMERIC_PLAYER_FIELDS:
+        if field == "role" and value.lower() in NO_ROLE_SENTINELS:
+            value = None
+        elif field in NUMERIC_PLAYER_FIELDS:
             if not value.lstrip("-").isdigit():
                 raise ValueError(f"'{field}' must be a number, got '{value}'.")
             value = int(value)

@@ -2,13 +2,18 @@
 persisted Match, pausing on pending_matches for anything ambiguous.
 
 Ambiguity types handled, each pausing at a distinct status and resuming via
-submit_answer: unrecognized player name (awaiting_player_match:<name>), no
-clear-majority team assignment for match_type "team"
-(awaiting_team_assignment:<faction>), and no primary role on record
-(awaiting_role:<name>). match_type "pickup"/"ranked" never pause for team
-assignment at all - they use a fixed generic placeholder team instead
-(GENERIC_TEAM_NAMES) and leave player_stats.team_id NULL, matching the
-existing system's behavior.
+submit_answer: unrecognized player name (awaiting_player_match:<name>), and
+no clear-majority team assignment for match_type "team"
+(awaiting_team_assignment:<faction>). match_type "pickup"/"ranked" never
+pause for team assignment at all - they use a fixed generic placeholder
+team instead (GENERIC_TEAM_NAMES) and leave player_stats.team_id NULL,
+matching the existing system's behavior.
+
+A missing primary role used to pause too (awaiting_role) but no longer
+does: role only affects which role-ELO ladder a player lands on, not who
+played or who won, so it's not worth blocking persist over. It's left
+NULL (a legitimate "no role this match" state, e.g. genuine multi-roling)
+and can be set/cleared afterward via edit_match_player.
 """
 
 import difflib
@@ -155,7 +160,6 @@ def _resolve_faction(
     match_type,
     player_resolutions,
     team_assignments,
-    role_overrides,
 ):
     """Returns (resolved, pause). Exactly one of the two is not None: resolved
     when every player, their role, and the faction's team assignment are
@@ -181,19 +185,13 @@ def _resolve_faction(
             }
             return None, pause
 
-        role = role_overrides.get(p["player"], ref_player["primary_role"])
-        if role is None:
-            pause = {
-                "status": f"awaiting_role:{p['player']}",
-                "question": {
-                    "type": "role",
-                    "player_name": p["player"],
-                    "candidates": ROLES,
-                },
-            }
-            return None, pause
-
-        resolved_players.append({**p, "ref_player": ref_player, "role": role})
+        # No pause when a player has no primary_role on record: "no role" is
+        # a legitimate persisted state (e.g. a genuine multi-role match),
+        # fixable afterward via edit_match_player rather than blocking the
+        # whole match on it.
+        resolved_players.append(
+            {**p, "ref_player": ref_player, "role": ref_player["primary_role"]}
+        )
 
     if match_type != "team":
         # Pickup/ranked matches never associate players with a team - no
@@ -461,6 +459,12 @@ def edit_match_player(pg_conn, match_id, player_name, updates):
         if unknown:
             raise ValueError(f"Can't edit field(s): {', '.join(sorted(unknown))}")
 
+        if "role" in updates and updates["role"] is not None:
+            matched = next((r for r in ROLES if r.lower() == str(updates["role"]).lower()), None)
+            if matched is None:
+                raise ValueError(f"'{updates['role']}' isn't a valid role. Use one of {', '.join(ROLES)}, or null to clear it.")
+            updates["role"] = matched
+
         if updates:
             assignments = ", ".join(f"{field} = %s" for field in updates)
             cur.execute(
@@ -512,7 +516,6 @@ def _advance(pg_conn, pending_match_id):
     answers = pending_match["answers"]
     player_resolutions = answers.get("player_resolutions", {})
     team_assignments = answers.get("team_assignments", {})
-    role_overrides = answers.get("role_overrides", {})
 
     resolved = {}
     for faction in ("imperial", "rebel"):
@@ -523,7 +526,6 @@ def _advance(pg_conn, pending_match_id):
             pending_match["match_type"],
             player_resolutions,
             team_assignments,
-            role_overrides,
         )
         if pause is not None:
             return _pause(pg_conn, pending_match_id, pause)
@@ -567,10 +569,6 @@ def submit_answer(pg_conn, pending_match_id, answer):
         faction = status[len("awaiting_team_assignment:") :]
         team_assignments = answers.setdefault("team_assignments", {})
         team_assignments[faction] = answer["ref_team_id"]
-    elif status.startswith("awaiting_role:"):
-        player_name = status[len("awaiting_role:") :]
-        role_overrides = answers.setdefault("role_overrides", {})
-        role_overrides[player_name] = answer["role"]
     else:
         raise NotImplementedError(f"Cannot answer status '{status}' yet")
 
