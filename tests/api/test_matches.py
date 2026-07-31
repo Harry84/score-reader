@@ -37,6 +37,19 @@ def _player(name, position, score, kills, deaths, assists, ai_kills, cap_ship_da
     }
 
 
+def _confirm_roster_sizes(client, result):
+    """Fixtures here use abbreviated <5-a-side rosters; confirm past the
+    roster_size validation pause(s) via the HTTP answer endpoint before
+    exercising whatever the test actually cares about."""
+    while result["status"].startswith("awaiting_roster_size:"):
+        response = client.post(
+            f"/matches/{result['pending_match_id']}/answer",
+            json={"answer": {"confirm": True}},
+        )
+        result = response.json()
+    return result
+
+
 def _unambiguous_extracted_data():
     return {
         "match_result": "IMPERIAL VICTORY",
@@ -88,7 +101,7 @@ def test_post_matches_extracts_and_persists_unambiguous_screenshot(
     )
 
     assert response.status_code == 200
-    body = response.json()
+    body = _confirm_roster_sizes(client, response.json())
     assert body["status"] == "persisted"
     assert "match_id" in body
     mock_extract.assert_called_once()
@@ -127,7 +140,7 @@ def test_post_matches_answer_resumes_a_paused_workflow(mock_extract, pg_conn, cl
     )
 
     assert start_response.status_code == 200
-    paused = start_response.json()
+    paused = _confirm_roster_sizes(client, start_response.json())
     assert paused["status"] == "awaiting_player_match:Vadar"
 
     answer_response = client.post(
@@ -136,7 +149,7 @@ def test_post_matches_answer_resumes_a_paused_workflow(mock_extract, pg_conn, cl
     )
 
     assert answer_response.status_code == 200
-    body = answer_response.json()
+    body = _confirm_roster_sizes(client, answer_response.json())
     assert body["status"] == "persisted"
     assert "match_id" in body
 
@@ -162,7 +175,7 @@ def _persist_unambiguous_match(mock_extract, pg_conn, client):
         },
         files={"image": ("screenshot.png", b"fake-screenshot-bytes", "image/png")},
     )
-    return response.json()
+    return _confirm_roster_sizes(client, response.json())
 
 
 @patch("api.main.extract_from_image_bytes")

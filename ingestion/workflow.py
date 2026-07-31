@@ -9,6 +9,14 @@ pause for team assignment at all - they use a fixed generic placeholder
 team instead (GENERIC_TEAM_NAMES) and leave player_stats.team_id NULL,
 matching the existing system's behavior.
 
+Two more pause types validate the raw extraction itself, before any player
+identity/team resolution runs: a faction with other than EXPECTED_ROSTER_SIZE
+players (awaiting_roster_size:<faction> - confirm to proceed anyway, e.g. a
+genuine no-show) and a player record missing a required field entirely
+(awaiting_missing_field:<player>:<field> - supply the correct value). Both
+guard against a bad/partial vision extraction silently becoming wrong stats,
+same motivation as the identity/team pauses above.
+
 A missing primary role used to pause too (awaiting_role) but no longer
 does: role only affects which role-ELO ladder a player lands on, not who
 played or who won, so it's not worth blocking persist over. It's left
@@ -151,6 +159,59 @@ def _team_candidates(pg_conn, resolved_players):
 
 
 ROLES = ["Farmer", "Flex", "Support"]
+
+# Squadrons is 5v5; assumed uniform across match_type since nothing in
+# CONTEXT.md suggests otherwise. Revisit if a mode with a different squad
+# size shows up.
+EXPECTED_ROSTER_SIZE = 5
+REQUIRED_NUMERIC_FIELDS = ["score", "kills", "deaths", "assists", "ai_kills", "cap_ship_damage"]
+REQUIRED_STRING_FIELDS = ["position"]
+
+
+def _validate_faction(faction, faction_players, answers):
+    """Returns a pause dict if the raw extraction for this faction looks
+    incomplete, else None. Checked before any player identity/team
+    resolution - no point resolving identities against data that's already
+    known to be short a player or missing a stat.
+
+    Deliberately doesn't validate the "player" name field itself (a missing
+    name is a different, rarer failure mode than a missing stat, and
+    field_overrides below key by player name - there'd be nothing to key by).
+    """
+    if (
+        len(faction_players) != EXPECTED_ROSTER_SIZE
+        and faction not in answers.get("confirmed_roster_sizes", [])
+    ):
+        return {
+            "status": f"awaiting_roster_size:{faction}",
+            "question": {
+                "type": "roster_size",
+                "faction": faction,
+                "count": len(faction_players),
+                "expected": EXPECTED_ROSTER_SIZE,
+            },
+        }
+
+    field_overrides = answers.get("field_overrides", {})
+    for p in faction_players:
+        overrides = field_overrides.get(p["player"], {})
+        for field in REQUIRED_NUMERIC_FIELDS + REQUIRED_STRING_FIELDS:
+            if field not in overrides and p.get(field) is None:
+                return {
+                    "status": f"awaiting_missing_field:{p['player']}:{field}",
+                    "question": {
+                        "type": "missing_field",
+                        "player_name": p["player"],
+                        "field": field,
+                        "numeric": field in REQUIRED_NUMERIC_FIELDS,
+                    },
+                }
+
+    return None
+
+
+def _apply_field_overrides(faction_players, field_overrides):
+    return [{**p, **field_overrides.get(p["player"], {})} for p in faction_players]
 
 
 def _resolve_faction(
@@ -516,13 +577,22 @@ def _advance(pg_conn, pending_match_id):
     answers = pending_match["answers"]
     player_resolutions = answers.get("player_resolutions", {})
     team_assignments = answers.get("team_assignments", {})
+    field_overrides = answers.get("field_overrides", {})
 
     resolved = {}
     for faction in ("imperial", "rebel"):
+        faction_players = pending_match["extracted_data"]["teams"][faction]["players"]
+
+        validation_pause = _validate_faction(faction, faction_players, answers)
+        if validation_pause is not None:
+            return _pause(pg_conn, pending_match_id, validation_pause)
+
+        faction_players = _apply_field_overrides(faction_players, field_overrides)
+
         faction_resolved, pause = _resolve_faction(
             pg_conn,
             faction,
-            pending_match["extracted_data"]["teams"][faction]["players"],
+            faction_players,
             pending_match["match_type"],
             player_resolutions,
             team_assignments,
@@ -569,6 +639,16 @@ def submit_answer(pg_conn, pending_match_id, answer):
         faction = status[len("awaiting_team_assignment:") :]
         team_assignments = answers.setdefault("team_assignments", {})
         team_assignments[faction] = answer["ref_team_id"]
+    elif status.startswith("awaiting_roster_size:"):
+        faction = status[len("awaiting_roster_size:") :]
+        confirmed = answers.setdefault("confirmed_roster_sizes", [])
+        if faction not in confirmed:
+            confirmed.append(faction)
+    elif status.startswith("awaiting_missing_field:"):
+        player_name, field = status[len("awaiting_missing_field:") :].rsplit(":", 1)
+        value = int(answer["value"]) if field in REQUIRED_NUMERIC_FIELDS else answer["value"]
+        field_overrides = answers.setdefault("field_overrides", {})
+        field_overrides.setdefault(player_name, {})[field] = value
     else:
         raise NotImplementedError(f"Cannot answer status '{status}' yet")
 

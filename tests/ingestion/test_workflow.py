@@ -38,6 +38,15 @@ def _player(name, position, score, kills, deaths, assists, ai_kills, cap_ship_da
     }
 
 
+def _confirm_roster_sizes(pg_conn, result):
+    """Most fixtures in this file use abbreviated <5-a-side rosters for
+    brevity; confirm past the roster_size validation pause(s) before
+    exercising whatever the test actually cares about."""
+    while result["status"].startswith("awaiting_roster_size:"):
+        result = submit_answer(pg_conn, result["pending_match_id"], {"confirm": True})
+    return result
+
+
 def test_unambiguous_screenshot_is_persisted_immediately(pg_conn):
     apply_schema(pg_conn)
     pg_conn.commit()
@@ -79,6 +88,7 @@ def test_unambiguous_screenshot_is_persisted_immediately(pg_conn):
         screenshot_ref="discord://message/123",
         extracted_data=extracted_data,
     )
+    result = _confirm_roster_sizes(pg_conn, result)
 
     assert result["status"] == "persisted"
     match_id = result["match_id"]
@@ -188,6 +198,7 @@ def test_unrecognized_player_name_pauses_for_clarification(pg_conn):
         screenshot_ref="discord://message/456",
         extracted_data=extracted_data,
     )
+    result = _confirm_roster_sizes(pg_conn, result)
 
     assert result["status"] == "awaiting_player_match:Vadar"
     assert result["question"] == {
@@ -245,11 +256,13 @@ def test_submit_answer_resolves_paused_player_and_persists_match(pg_conn):
         screenshot_ref="discord://message/789",
         extracted_data=extracted_data,
     )
+    paused = _confirm_roster_sizes(pg_conn, paused)
     assert paused["status"] == "awaiting_player_match:Vadar"
 
     result = submit_answer(
         pg_conn, paused["pending_match_id"], {"ref_player_id": vader_id}
     )
+    result = _confirm_roster_sizes(pg_conn, result)
 
     assert result["status"] == "persisted"
     match_id = result["match_id"]
@@ -316,6 +329,7 @@ def test_minority_player_is_auto_flagged_as_subbing_without_a_pause(pg_conn):
         screenshot_ref="discord://message/101",
         extracted_data=extracted_data,
     )
+    result = _confirm_roster_sizes(pg_conn, result)
 
     assert result["status"] == "persisted"
 
@@ -388,6 +402,7 @@ def test_no_clear_majority_pauses_for_team_assignment(pg_conn):
         screenshot_ref="discord://message/202",
         extracted_data=extracted_data,
     )
+    paused = _confirm_roster_sizes(pg_conn, paused)
 
     assert paused["status"] == "awaiting_team_assignment:imperial"
     assert paused["question"]["type"] == "team_assignment"
@@ -397,6 +412,7 @@ def test_no_clear_majority_pauses_for_team_assignment(pg_conn):
     result = submit_answer(
         pg_conn, paused["pending_match_id"], {"ref_team_id": team_a_id}
     )
+    result = _confirm_roster_sizes(pg_conn, result)
 
     assert result["status"] == "persisted"
 
@@ -456,6 +472,7 @@ def test_player_with_no_primary_role_persists_directly_with_null_role(pg_conn):
         screenshot_ref="discord://message/303",
         extracted_data=extracted_data,
     )
+    result = _confirm_roster_sizes(pg_conn, result)
 
     assert result["status"] == "persisted"
     vader = next(p for p in result["players"]["imperial"] if p["player"] == "Vader")
@@ -540,6 +557,7 @@ def test_pickup_match_uses_generic_teams_and_nulls_player_team_id(pg_conn):
         screenshot_ref="discord://message/909",
         extracted_data=extracted_data,
     )
+    result = _confirm_roster_sizes(pg_conn, result)
 
     assert result["status"] == "persisted"
     match_id = result["match_id"]
@@ -619,6 +637,7 @@ def test_ranked_match_uses_generic_ranked_team_names(pg_conn):
         screenshot_ref="discord://message/910",
         extracted_data=extracted_data,
     )
+    result = _confirm_roster_sizes(pg_conn, result)
 
     assert result["status"] == "persisted"
 
@@ -680,7 +699,7 @@ def _persist_simple_team_match(pg_conn, campaign_id="campaign-1"):
             },
         },
     }
-    return start_ingestion(
+    result = start_ingestion(
         pg_conn,
         campaign_id=campaign_id,
         turn_id="turn-1",
@@ -689,6 +708,7 @@ def _persist_simple_team_match(pg_conn, campaign_id="campaign-1"):
         screenshot_ref="discord://message/edit-test",
         extracted_data=extracted_data,
     )
+    return _confirm_roster_sizes(pg_conn, result)
 
 
 def test_edit_match_player_updates_stats_and_recomputes_elo(pg_conn):
@@ -789,3 +809,194 @@ def test_edit_match_winner_rejects_invalid_value(pg_conn):
 
     with pytest.raises(ValueError):
         edit_match_winner(pg_conn, result["match_id"], "SITH")
+
+
+def test_wrong_roster_size_pauses_for_confirmation(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    imperial_team_id = _make_ref_team(pg_conn, "181st")
+    rebel_team_id = _make_ref_team(pg_conn, "Rogue Squadron")
+    _make_ref_player(pg_conn, "Vader", imperial_team_id, "Flex")
+    _make_ref_player(pg_conn, "Wedge", rebel_team_id, "Flex")
+    pg_conn.commit()
+
+    system_id = _get_system_id(pg_conn)
+    extracted_data = {
+        "match_result": "IMPERIAL VICTORY",
+        "teams": {
+            "imperial": {"players": [_player("Vader", "Titan One", 1675, 4, 2, 1, 18, 30139)]},
+            "rebel": {"players": [_player("Wedge", "Vanguard One", 1200, 2, 4, 0, 10, 0)]},
+        },
+    }
+
+    paused = start_ingestion(
+        pg_conn,
+        campaign_id="campaign-1",
+        turn_id="turn-1",
+        system_id=system_id,
+        match_type="team",
+        screenshot_ref="discord://message/roster-size",
+        extracted_data=extracted_data,
+    )
+
+    assert paused["status"] == "awaiting_roster_size:imperial"
+    assert paused["question"] == {
+        "type": "roster_size",
+        "faction": "imperial",
+        "count": 1,
+        "expected": 5,
+    }
+
+    result = submit_answer(pg_conn, paused["pending_match_id"], {"confirm": True})
+    assert result["status"] == "awaiting_roster_size:rebel"
+
+    result = submit_answer(pg_conn, result["pending_match_id"], {"confirm": True})
+    assert result["status"] == "persisted"
+
+
+def test_missing_field_pauses_for_a_value(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    imperial_team_id = _make_ref_team(pg_conn, "181st")
+    rebel_team_id = _make_ref_team(pg_conn, "Rogue Squadron")
+    _make_ref_player(pg_conn, "Vader", imperial_team_id, "Flex")
+    _make_ref_player(pg_conn, "Tarkin", imperial_team_id, "Support")
+    _make_ref_player(pg_conn, "Wedge", rebel_team_id, "Flex")
+    _make_ref_player(pg_conn, "Luke", rebel_team_id, "Support")
+    pg_conn.commit()
+
+    system_id = _get_system_id(pg_conn)
+    extracted_data = {
+        "match_result": "IMPERIAL VICTORY",
+        "teams": {
+            "imperial": {
+                "players": [
+                    {**_player("Vader", "Titan One", 1675, 4, 2, 1, 18, 30139), "kills": None},
+                    _player("Tarkin", "Titan Two", 900, 1, 3, 2, 5, 0),
+                ]
+            },
+            "rebel": {
+                "players": [
+                    _player("Wedge", "Vanguard One", 1200, 2, 4, 0, 10, 0),
+                    _player("Luke", "Vanguard Two", 1400, 3, 1, 2, 12, 0),
+                ]
+            },
+        },
+    }
+
+    paused = start_ingestion(
+        pg_conn,
+        campaign_id="campaign-1",
+        turn_id="turn-1",
+        system_id=system_id,
+        match_type="team",
+        screenshot_ref="discord://message/missing-field",
+        extracted_data=extracted_data,
+    )
+    paused = _confirm_roster_sizes(pg_conn, paused)
+
+    assert paused["status"] == "awaiting_missing_field:Vader:kills"
+    assert paused["question"] == {
+        "type": "missing_field",
+        "player_name": "Vader",
+        "field": "kills",
+        "numeric": True,
+    }
+
+    result = submit_answer(pg_conn, paused["pending_match_id"], {"value": 4})
+    result = _confirm_roster_sizes(pg_conn, result)
+
+    assert result["status"] == "persisted"
+    vader = next(p for p in result["players"]["imperial"] if p["player"] == "Vader")
+    assert vader["kills"] == 4
+
+
+def test_missing_string_field_pauses_and_accepts_text(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    imperial_team_id = _make_ref_team(pg_conn, "181st")
+    rebel_team_id = _make_ref_team(pg_conn, "Rogue Squadron")
+    _make_ref_player(pg_conn, "Vader", imperial_team_id, "Flex")
+    _make_ref_player(pg_conn, "Wedge", rebel_team_id, "Flex")
+    pg_conn.commit()
+
+    system_id = _get_system_id(pg_conn)
+    extracted_data = {
+        "match_result": "IMPERIAL VICTORY",
+        "teams": {
+            "imperial": {
+                "players": [
+                    {**_player("Vader", "Titan One", 1675, 4, 2, 1, 18, 30139), "position": None}
+                ]
+            },
+            "rebel": {"players": [_player("Wedge", "Vanguard One", 1200, 2, 4, 0, 10, 0)]},
+        },
+    }
+
+    paused = start_ingestion(
+        pg_conn,
+        campaign_id="campaign-1",
+        turn_id="turn-1",
+        system_id=system_id,
+        match_type="team",
+        screenshot_ref="discord://message/missing-position",
+        extracted_data=extracted_data,
+    )
+    paused = _confirm_roster_sizes(pg_conn, paused)
+
+    assert paused["status"] == "awaiting_missing_field:Vader:position"
+    assert paused["question"]["numeric"] is False
+
+    result = submit_answer(pg_conn, paused["pending_match_id"], {"value": "Titan One"})
+    result = _confirm_roster_sizes(pg_conn, result)
+
+    assert result["status"] == "persisted"
+
+
+def test_full_five_a_side_roster_with_all_fields_persists_without_pausing(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    imperial_team_id = _make_ref_team(pg_conn, "181st")
+    rebel_team_id = _make_ref_team(pg_conn, "Rogue Squadron")
+    imperial_names = ["Vader", "Tarkin", "Piett", "Veers", "Ozzel"]
+    rebel_names = ["Wedge", "Luke", "Leia", "Han", "Lando"]
+    for name in imperial_names:
+        _make_ref_player(pg_conn, name, imperial_team_id, "Flex")
+    for name in rebel_names:
+        _make_ref_player(pg_conn, name, rebel_team_id, "Flex")
+    pg_conn.commit()
+
+    system_id = _get_system_id(pg_conn)
+    extracted_data = {
+        "match_result": "IMPERIAL VICTORY",
+        "teams": {
+            "imperial": {
+                "players": [
+                    _player(name, f"Titan {i + 1}", 1000 + i, i, i, i, i, i)
+                    for i, name in enumerate(imperial_names)
+                ]
+            },
+            "rebel": {
+                "players": [
+                    _player(name, f"Vanguard {i + 1}", 900 + i, i, i, i, i, i)
+                    for i, name in enumerate(rebel_names)
+                ]
+            },
+        },
+    }
+
+    result = start_ingestion(
+        pg_conn,
+        campaign_id="campaign-1",
+        turn_id="turn-1",
+        system_id=system_id,
+        match_type="team",
+        screenshot_ref="discord://message/full-roster",
+        extracted_data=extracted_data,
+    )
+
+    assert result["status"] == "persisted"

@@ -47,6 +47,16 @@ def render_question(question):
             lines.append("Reply with the number.")
         return "\n".join(lines)
 
+    if qtype == "roster_size":
+        return (
+            f"{question['faction'].capitalize()} team has {question['count']} players, "
+            f"expected {question['expected']}. Reply `confirm` to proceed anyway."
+        )
+
+    if qtype == "missing_field":
+        kind = "a number" if question["numeric"] else "a value"
+        return f"'{question['player_name']}' is missing '{question['field']}'. Reply with {kind}."
+
     raise ValueError(f"Don't know how to render a '{qtype}' question yet.")
 
 
@@ -65,14 +75,27 @@ def parse_answer(question, text):
     Raises ValueError with a user-facing message on unparseable input.
     """
     qtype = question["type"]
-    candidates = question["candidates"]
     text = text.strip()
 
     if qtype == "player_match":
+        candidates = question["candidates"]
         return {"ref_player_id": candidates[_parse_index(text, len(candidates))]["id"]}
 
     if qtype == "team_assignment":
+        candidates = question["candidates"]
         return {"ref_team_id": candidates[_parse_index(text, len(candidates))]["id"]}
+
+    if qtype == "roster_size":
+        if text.lower() != "confirm":
+            raise ValueError("Reply `confirm` to proceed with this roster size.")
+        return {"confirm": True}
+
+    if qtype == "missing_field":
+        if question["numeric"]:
+            if not text.lstrip("-").isdigit():
+                raise ValueError(f"'{question['field']}' must be a number, got '{text}'.")
+            return {"value": int(text)}
+        return {"value": text}
 
     raise ValueError(f"Don't know how to answer a '{qtype}' question yet.")
 

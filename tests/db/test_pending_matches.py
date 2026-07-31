@@ -29,11 +29,15 @@ def test_pending_match_round_trips_through_full_status_sequence(pg_conn):
     # awaiting_match_type and awaiting_subbing aren't in this sequence: match_type
     # is a required ingestion input, and subbing is auto-computed once team
     # assignment resolves (majority vote or awaiting_team_assignment) - neither
-    # ended up needing its own pause (ROADMAP Phase 1).
+    # ended up needing its own pause (ROADMAP Phase 1). awaiting_role isn't
+    # either: a missing role no longer pauses at all (ROADMAP Phase 3 - fixed
+    # via edit_match_player instead), and the CHECK constraint was tightened
+    # to match (0011_pending_matches_status_validation.sql).
     sequence = [
         "awaiting_player_match:PlayerX",
         "awaiting_team_assignment:imperial",
-        "awaiting_role:PlayerX",
+        "awaiting_roster_size:imperial",
+        "awaiting_missing_field:PlayerX:kills",
         "ready",
         "persisted",
     ]

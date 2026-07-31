@@ -40,6 +40,35 @@ def test_render_team_assignment_question_lists_candidates():
     assert "1. Rogue Squadron" in text
 
 
+def test_render_roster_size_question():
+    question = {"type": "roster_size", "faction": "imperial", "count": 3, "expected": 5}
+    text = render_question(question)
+    assert "imperial" in text.lower()
+    assert "3" in text
+    assert "5" in text
+    assert "confirm" in text.lower()
+
+
+def test_render_missing_field_question_numeric():
+    question = {"type": "missing_field", "player_name": "Vader", "field": "kills", "numeric": True}
+    text = render_question(question)
+    assert "Vader" in text
+    assert "kills" in text
+    assert "number" in text.lower()
+
+
+def test_render_missing_field_question_string():
+    question = {
+        "type": "missing_field",
+        "player_name": "Vader",
+        "field": "position",
+        "numeric": False,
+    }
+    text = render_question(question)
+    assert "Vader" in text
+    assert "position" in text
+
+
 def test_parse_answer_player_match_selects_candidate_by_number():
     question = {
         "type": "player_match",
@@ -66,6 +95,39 @@ def test_parse_answer_rejects_out_of_range_number():
     }
     with pytest.raises(ValueError):
         parse_answer(question, "5")
+
+
+def test_parse_answer_roster_size_accepts_confirm_case_insensitive():
+    question = {"type": "roster_size", "faction": "imperial", "count": 3, "expected": 5}
+    assert parse_answer(question, "confirm") == {"confirm": True}
+    assert parse_answer(question, "CONFIRM") == {"confirm": True}
+
+
+def test_parse_answer_roster_size_rejects_anything_else():
+    question = {"type": "roster_size", "faction": "imperial", "count": 3, "expected": 5}
+    with pytest.raises(ValueError):
+        parse_answer(question, "yes")
+
+
+def test_parse_answer_missing_field_numeric_coerces_int():
+    question = {"type": "missing_field", "player_name": "Vader", "field": "kills", "numeric": True}
+    assert parse_answer(question, "4") == {"value": 4}
+
+
+def test_parse_answer_missing_field_numeric_rejects_non_numeric():
+    question = {"type": "missing_field", "player_name": "Vader", "field": "kills", "numeric": True}
+    with pytest.raises(ValueError):
+        parse_answer(question, "four")
+
+
+def test_parse_answer_missing_field_string_keeps_text():
+    question = {
+        "type": "missing_field",
+        "player_name": "Vader",
+        "field": "position",
+        "numeric": False,
+    }
+    assert parse_answer(question, "Titan One") == {"value": "Titan One"}
 
 
 def test_render_match_summary_includes_winner_and_both_factions():
