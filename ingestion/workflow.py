@@ -373,11 +373,138 @@ def _persist(pg_conn, pending_match_id, pending_match, resolved):
     else:
         recompute_player_elo(pg_conn, pending_match["campaign_id"], match_type)
 
-    return {
-        "status": "persisted",
-        "match_id": match_id,
-        "pending_match_id": pending_match_id,
-    }
+    summary = _build_match_summary(pg_conn, match_id)
+    summary["pending_match_id"] = pending_match_id
+    return summary
+
+
+def _build_match_summary(pg_conn, match_id):
+    """The persisted-match shape returned by _persist and by the edit_*
+    functions below - always read back from the DB rather than assembled
+    from in-memory state, so an edited match's summary reflects what's
+    actually stored."""
+    with pg_conn.cursor() as cur:
+        cur.execute("SELECT winner FROM matches WHERE id = %s", (match_id,))
+        (winner,) = cur.fetchone()
+        cur.execute(
+            """
+            SELECT faction, player_name, role, score, kills, deaths, assists, ai_kills, cap_ship_damage
+            FROM player_stats WHERE match_id = %s ORDER BY faction, id
+            """,
+            (match_id,),
+        )
+        rows = cur.fetchall()
+
+    players = {"imperial": [], "rebel": []}
+    for faction, player, role, score, kills, deaths, assists, ai_kills, cap_ship_damage in rows:
+        players[faction.lower()].append(
+            {
+                "player": player,
+                "role": role,
+                "score": score,
+                "kills": kills,
+                "deaths": deaths,
+                "assists": assists,
+                "ai_kills": ai_kills,
+                "cap_ship_damage": cap_ship_damage,
+            }
+        )
+
+    return {"status": "persisted", "match_id": match_id, "winner": winner, "players": players}
+
+
+def _recompute_for_match(pg_conn, match_id):
+    with pg_conn.cursor() as cur:
+        cur.execute("SELECT campaign_id, match_type FROM matches WHERE id = %s", (match_id,))
+        campaign_id, match_type = cur.fetchone()
+    if match_type == "team":
+        recompute_team_elo(pg_conn, campaign_id)
+    else:
+        recompute_player_elo(pg_conn, campaign_id, match_type)
+
+
+EDITABLE_PLAYER_FIELDS = {"role", "score", "kills", "deaths", "assists", "ai_kills", "cap_ship_damage"}
+
+
+def edit_match_player(pg_conn, match_id, player_name, updates):
+    """Correct a persisted match's per-player stats or reassign a misread
+    name to the correct canonical player - the same fields
+    stats_reader/data_cleaner.py's old pre-DB CLI review step let you fix,
+    now applied to an already-persisted Postgres match instead of a JSON
+    file. Safe to call any time after persist: recompute_player_elo/
+    recompute_team_elo always replay the full (campaign_id, match_type)
+    history from scratch, so there's no incremental state to undo.
+    """
+    updates = dict(updates)
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "SELECT id FROM player_stats WHERE match_id = %s AND player_name = %s",
+            (match_id, player_name),
+        )
+        row = cur.fetchone()
+        if row is None:
+            raise ValueError(f"No player '{player_name}' on match {match_id}")
+        player_stats_id = row[0]
+
+        new_name = updates.pop("name", None)
+        if new_name is not None:
+            ref_player = _find_ref_player(pg_conn, new_name)
+            if ref_player is None:
+                raise ValueError(f"No canonical player named '{new_name}'")
+            player_id, canonical_name = _get_or_create_player(pg_conn, ref_player["id"])
+            cur.execute(
+                "UPDATE player_stats SET player_id = %s, player_name = %s, player_hash = %s WHERE id = %s",
+                (player_id, new_name, _player_hash(canonical_name), player_stats_id),
+            )
+
+        unknown = set(updates) - EDITABLE_PLAYER_FIELDS
+        if unknown:
+            raise ValueError(f"Can't edit field(s): {', '.join(sorted(unknown))}")
+
+        if updates:
+            assignments = ", ".join(f"{field} = %s" for field in updates)
+            cur.execute(
+                f"UPDATE player_stats SET {assignments} WHERE id = %s",
+                (*updates.values(), player_stats_id),
+            )
+    pg_conn.commit()
+
+    _recompute_for_match(pg_conn, match_id)
+    return _build_match_summary(pg_conn, match_id)
+
+
+def edit_match_winner(pg_conn, match_id, winner):
+    """Correct a persisted match's winner, fixing up teams.wins/losses to
+    match, then re-running ELO the same way edit_match_player does."""
+    winner = winner.upper()
+    if winner not in ("IMPERIAL", "REBEL"):
+        raise ValueError("winner must be 'IMPERIAL' or 'REBEL'")
+
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "SELECT winner, imperial_team_id, rebel_team_id FROM matches WHERE id = %s", (match_id,)
+        )
+        row = cur.fetchone()
+        if row is None:
+            raise ValueError(f"No match with id {match_id}")
+        old_winner, imperial_team_id, rebel_team_id = row
+
+        if winner != old_winner:
+            if old_winner in ("IMPERIAL", "REBEL"):
+                old_winner_team = imperial_team_id if old_winner == "IMPERIAL" else rebel_team_id
+                old_loser_team = rebel_team_id if old_winner == "IMPERIAL" else imperial_team_id
+                cur.execute("UPDATE teams SET wins = wins - 1 WHERE id = %s", (old_winner_team,))
+                cur.execute("UPDATE teams SET losses = losses - 1 WHERE id = %s", (old_loser_team,))
+
+            new_winner_team = imperial_team_id if winner == "IMPERIAL" else rebel_team_id
+            new_loser_team = rebel_team_id if winner == "IMPERIAL" else imperial_team_id
+            cur.execute("UPDATE teams SET wins = wins + 1 WHERE id = %s", (new_winner_team,))
+            cur.execute("UPDATE teams SET losses = losses + 1 WHERE id = %s", (new_loser_team,))
+            cur.execute("UPDATE matches SET winner = %s WHERE id = %s", (winner, match_id))
+    pg_conn.commit()
+
+    _recompute_for_match(pg_conn, match_id)
+    return _build_match_summary(pg_conn, match_id)
 
 
 def _advance(pg_conn, pending_match_id):

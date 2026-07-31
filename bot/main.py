@@ -10,7 +10,14 @@ import discord
 import httpx
 
 from bot import backend_client, config
-from bot.conversation import parse_answer, render_question
+from bot.conversation import (
+    parse_answer,
+    parse_edit_command,
+    parse_edit_updates,
+    render_help,
+    render_match_summary,
+    render_question,
+)
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -39,7 +46,7 @@ async def _reply_error(message, response):
 async def _handle_result(message, result):
     status = result.get("status")
     if status == "persisted":
-        await message.reply(f"Match persisted: `{result['match_id']}`")
+        await message.reply(render_match_summary(result))
         return
     if status and status.startswith("awaiting_"):
         _pending_questions[message.channel.id] = {
@@ -142,10 +149,47 @@ async def _handle_add_roster(message, rest):
     await message.reply(f"Added '{matches[0]['name']}' to team `{team_id}`'s roster.")
 
 
+async def _handle_edit_player(message, rest):
+    try:
+        match_id, player_name, edit_tokens = parse_edit_command(rest)
+        updates = parse_edit_updates(edit_tokens)
+    except ValueError as e:
+        await message.reply(str(e))
+        return
+
+    response = await backend_client.edit_match_player(http_client, match_id, player_name, updates)
+    if response.status_code != 200:
+        await _reply_error(message, response)
+        return
+    await message.reply(render_match_summary(response.json()))
+
+
+async def _handle_edit_winner(message, rest):
+    parts = rest.split()
+    if len(parts) != 2 or not parts[0].isdigit():
+        await message.reply("Usage: `!edit-winner <match_id> <IMPERIAL|REBEL>`")
+        return
+    match_id = int(parts[0])
+    winner = parts[1]
+
+    response = await backend_client.edit_match_winner(http_client, match_id, winner)
+    if response.status_code != 200:
+        await _reply_error(message, response)
+        return
+    await message.reply(render_match_summary(response.json()))
+
+
+async def _handle_help(message, rest):
+    await message.reply(render_help())
+
+
 COMMANDS = {
     "!create-team": _handle_create_team,
     "!set-captain": _handle_set_captain,
     "!add-roster": _handle_add_roster,
+    "!edit": _handle_edit_player,
+    "!edit-winner": _handle_edit_winner,
+    "!help": _handle_help,
 }
 
 

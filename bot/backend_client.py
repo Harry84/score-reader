@@ -45,3 +45,13 @@ async def create_match(
 
 async def submit_answer(client, pending_match_id, answer):
     return await client.post(f"/matches/{pending_match_id}/answer", json={"answer": answer})
+
+
+async def edit_match_player(client, match_id, player_name, updates):
+    return await client.patch(
+        f"/matches/{match_id}/players/{player_name}", json={"updates": updates}
+    )
+
+
+async def edit_match_winner(client, match_id, winner):
+    return await client.patch(f"/matches/{match_id}/winner", json={"winner": winner})

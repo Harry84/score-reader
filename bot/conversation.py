@@ -5,6 +5,28 @@ produces, without a real Discord message or a running backend.
 """
 
 
+def render_match_summary(result):
+    """Post-persist confirmation table, re-rendered after !edit too."""
+    lines = [f"Match `{result['match_id']}` persisted - winner: {result['winner']}"]
+    for faction in ("imperial", "rebel"):
+        players = result["players"].get(faction, [])
+        if not players:
+            continue
+        lines.append(f"\n**{faction.upper()}**")
+        lines.append("```")
+        lines.append(
+            f"{'Player':<20}{'Role':<10}{'Score':>6}{'K':>4}{'D':>4}{'A':>4}{'AI':>5}{'CapDmg':>8}"
+        )
+        for p in players:
+            role = p["role"] or "-"
+            lines.append(
+                f"{p['player']:<20}{role:<10}{p['score']:>6}{p['kills']:>4}{p['deaths']:>4}"
+                f"{p['assists']:>4}{p['ai_kills']:>5}{p['cap_ship_damage']:>8}"
+            )
+        lines.append("```")
+    return "\n".join(lines)
+
+
 def render_question(question):
     qtype = question["type"]
     if qtype == "player_match":
@@ -67,3 +89,84 @@ def parse_answer(question, text):
         return {"role": matched}
 
     raise ValueError(f"Don't know how to answer a '{qtype}' question yet.")
+
+
+# Mirrors ingestion.workflow.EDITABLE_PLAYER_FIELDS plus "name" (a reassignment,
+# not a raw column write - see edit_match_player), matching the field set
+# stats_reader/data_cleaner.py's old pre-DB CLI review step let you correct.
+EDITABLE_PLAYER_FIELDS = {"name", "role", "score", "kills", "deaths", "assists", "ai_kills", "cap_ship_damage"}
+NUMERIC_PLAYER_FIELDS = {"score", "kills", "deaths", "assists", "ai_kills", "cap_ship_damage"}
+
+# One example value per editable field, used by render_help() - kept next to
+# EDITABLE_PLAYER_FIELDS so a new field can't be added without also getting
+# a help example.
+FIELD_EXAMPLES = {
+    "name": "Tarkin",
+    "role": "Support",
+    "score": "1999",
+    "kills": "5",
+    "deaths": "2",
+    "assists": "1",
+    "ai_kills": "12",
+    "cap_ship_damage": "15000",
+}
+assert set(FIELD_EXAMPLES) == EDITABLE_PLAYER_FIELDS
+
+
+def parse_edit_command(rest):
+    """Split '<match_id> <player name> field=value ...' into
+    (match_id, player_name, edit_tokens). Player names may contain spaces;
+    field=value tokens (which never do) mark where the name ends.
+    """
+    parts = rest.split()
+    if not parts or not parts[0].isdigit():
+        raise ValueError("Usage: `!edit <match_id> <player_name> <field>=<value> [...]`")
+    match_id = int(parts[0])
+
+    rest_parts = parts[1:]
+    split_index = next((i for i, p in enumerate(rest_parts) if "=" in p), len(rest_parts))
+    if split_index == 0:
+        raise ValueError("Usage: `!edit <match_id> <player_name> <field>=<value> [...]`")
+
+    player_name = " ".join(rest_parts[:split_index])
+    edit_tokens = rest_parts[split_index:]
+    return match_id, player_name, edit_tokens
+
+
+def parse_edit_updates(tokens):
+    """Turn ['score=1700', 'kills=5'] into {'score': 1700, 'kills': 5}."""
+    if not tokens:
+        raise ValueError("No field=value edits given.")
+
+    updates = {}
+    for token in tokens:
+        if "=" not in token:
+            raise ValueError(f"'{token}' isn't in field=value form.")
+        field, _, value = token.partition("=")
+        if field not in EDITABLE_PLAYER_FIELDS:
+            raise ValueError(
+                f"Can't edit '{field}'. Editable fields: {', '.join(sorted(EDITABLE_PLAYER_FIELDS))}"
+            )
+        if field in NUMERIC_PLAYER_FIELDS:
+            if not value.lstrip("-").isdigit():
+                raise ValueError(f"'{field}' must be a number, got '{value}'.")
+            value = int(value)
+        updates[field] = value
+    return updates
+
+
+def render_help():
+    lines = [
+        "**Commands**",
+        "`!create-team <name>` - create or find a team by name",
+        "`!set-captain <team_id> @discord_user` - assign a team's captain",
+        "`!add-roster <team_id> <player name>` - attach an existing player to a team's roster",
+        "`!edit <match_id> <player name> <field>=<value> [...]` - correct a persisted match's stats",
+        "`!edit-winner <match_id> <IMPERIAL|REBEL>` - correct a persisted match's winner",
+        "",
+        "**Editable fields for !edit** (combine several in one command):",
+    ]
+    lines += [
+        f"  `{field}={example}`" for field, example in sorted(FIELD_EXAMPLES.items())
+    ]
+    return "\n".join(lines)

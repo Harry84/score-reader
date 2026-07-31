@@ -8,13 +8,18 @@ start_ingestion() used everywhere else.
 import os
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, File, Form, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from api.dependencies import get_pg_conn
 from api.teams import router as teams_router
 from ingestion.extraction import extract_from_image_bytes
-from ingestion.workflow import start_ingestion, submit_answer
+from ingestion.workflow import (
+    edit_match_player,
+    edit_match_winner,
+    start_ingestion,
+    submit_answer,
+)
 
 load_dotenv()
 
@@ -24,6 +29,14 @@ app.include_router(teams_router)
 
 class AnswerRequest(BaseModel):
     answer: dict
+
+
+class EditPlayerRequest(BaseModel):
+    updates: dict
+
+
+class EditWinnerRequest(BaseModel):
+    winner: str
 
 
 @app.post("/matches")
@@ -54,3 +67,21 @@ async def create_match(
 @app.post("/matches/{pending_match_id}/answer")
 def answer_match(pending_match_id: int, body: AnswerRequest, pg_conn=Depends(get_pg_conn)):
     return submit_answer(pg_conn, pending_match_id, body.answer)
+
+
+@app.patch("/matches/{match_id}/players/{player_name}")
+def edit_match_player_route(
+    match_id: int, player_name: str, body: EditPlayerRequest, pg_conn=Depends(get_pg_conn)
+):
+    try:
+        return edit_match_player(pg_conn, match_id, player_name, body.updates)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.patch("/matches/{match_id}/winner")
+def edit_match_winner_route(match_id: int, body: EditWinnerRequest, pg_conn=Depends(get_pg_conn)):
+    try:
+        return edit_match_winner(pg_conn, match_id, body.winner)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))

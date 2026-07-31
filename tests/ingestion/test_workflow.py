@@ -1,7 +1,7 @@
 import pytest
 
 from db.migrate_runner import apply_schema
-from ingestion.workflow import start_ingestion, submit_answer
+from ingestion.workflow import edit_match_player, edit_match_winner, start_ingestion, submit_answer
 
 
 def _make_ref_team(pg_conn, name):
@@ -82,6 +82,12 @@ def test_unambiguous_screenshot_is_persisted_immediately(pg_conn):
 
     assert result["status"] == "persisted"
     match_id = result["match_id"]
+
+    assert result["winner"] == "IMPERIAL"
+    assert [p["player"] for p in result["players"]["imperial"]] == ["Vader", "Tarkin"]
+    assert result["players"]["imperial"][0]["role"] == "Flex"
+    assert result["players"]["imperial"][0]["score"] == 1675
+    assert [p["player"] for p in result["players"]["rebel"]] == ["Wedge", "Luke"]
 
     with pg_conn.cursor() as cur:
         cur.execute(
@@ -626,3 +632,141 @@ def test_ranked_match_uses_generic_ranked_team_names(pg_conn):
 
     assert general_ratings["Vader"] == pytest.approx(984.0)
     assert general_ratings["Wedge"] == pytest.approx(1016.0)
+
+
+def _persist_simple_team_match(pg_conn, campaign_id="campaign-1"):
+    imperial_team_id = _make_ref_team(pg_conn, "181st")
+    rebel_team_id = _make_ref_team(pg_conn, "Rogue Squadron")
+    _make_ref_player(pg_conn, "Vader", imperial_team_id, "Flex")
+    _make_ref_player(pg_conn, "Tarkin", imperial_team_id, "Support")
+    _make_ref_player(pg_conn, "Wedge", rebel_team_id, "Flex")
+    _make_ref_player(pg_conn, "Luke", rebel_team_id, "Support")
+    pg_conn.commit()
+
+    system_id = _get_system_id(pg_conn)
+    extracted_data = {
+        "match_result": "IMPERIAL VICTORY",
+        "teams": {
+            "imperial": {
+                "players": [
+                    _player("Vader", "Titan One", 1675, 4, 2, 1, 18, 30139),
+                    _player("Tarkin", "Titan Two", 900, 1, 3, 2, 5, 0),
+                ]
+            },
+            "rebel": {
+                "players": [
+                    _player("Wedge", "Vanguard One", 1200, 2, 4, 0, 10, 0),
+                    _player("Luke", "Vanguard Two", 1400, 3, 1, 2, 12, 0),
+                ]
+            },
+        },
+    }
+    return start_ingestion(
+        pg_conn,
+        campaign_id=campaign_id,
+        turn_id="turn-1",
+        system_id=system_id,
+        match_type="team",
+        screenshot_ref="discord://message/edit-test",
+        extracted_data=extracted_data,
+    )
+
+
+def test_edit_match_player_updates_stats_and_recomputes_elo(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    result = _persist_simple_team_match(pg_conn)
+    match_id = result["match_id"]
+
+    updated = edit_match_player(pg_conn, match_id, "Vader", {"score": 2000, "kills": 10})
+
+    assert updated["status"] == "persisted"
+    vader = next(p for p in updated["players"]["imperial"] if p["player"] == "Vader")
+    assert vader["score"] == 2000
+    assert vader["kills"] == 10
+
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "SELECT score, kills FROM player_stats WHERE match_id = %s AND player_name = 'Vader'",
+            (match_id,),
+        )
+        assert cur.fetchone() == (2000, 10)
+
+
+def test_edit_match_player_rejects_unknown_field(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    result = _persist_simple_team_match(pg_conn)
+
+    with pytest.raises(ValueError):
+        edit_match_player(pg_conn, result["match_id"], "Vader", {"favorite_color": "red"})
+
+
+def test_edit_match_player_rejects_unknown_player(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    result = _persist_simple_team_match(pg_conn)
+
+    with pytest.raises(ValueError):
+        edit_match_player(pg_conn, result["match_id"], "Nobody", {"score": 1})
+
+
+def test_edit_match_player_reassigns_misread_name_to_correct_canonical_player(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    result = _persist_simple_team_match(pg_conn)
+    match_id = result["match_id"]
+
+    updated = edit_match_player(pg_conn, match_id, "Vader", {"name": "Tarkin"})
+
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "SELECT p.name FROM player_stats ps JOIN players p ON ps.player_id = p.id "
+            "WHERE ps.match_id = %s AND ps.player_name = 'Tarkin' AND ps.role = 'Flex'",
+            (match_id,),
+        )
+        assert cur.fetchone() == ("Tarkin",)
+    assert updated["status"] == "persisted"
+
+
+def test_edit_match_winner_flips_team_wins_and_losses(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    result = _persist_simple_team_match(pg_conn)
+    match_id = result["match_id"]
+
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "SELECT imp.wins, imp.losses, reb.wins, reb.losses FROM matches m "
+            "JOIN teams imp ON m.imperial_team_id = imp.id "
+            "JOIN teams reb ON m.rebel_team_id = reb.id WHERE m.id = %s",
+            (match_id,),
+        )
+        assert cur.fetchone() == (1, 0, 0, 1)
+
+    updated = edit_match_winner(pg_conn, match_id, "rebel")
+    assert updated["winner"] == "REBEL"
+
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "SELECT imp.wins, imp.losses, reb.wins, reb.losses FROM matches m "
+            "JOIN teams imp ON m.imperial_team_id = imp.id "
+            "JOIN teams reb ON m.rebel_team_id = reb.id WHERE m.id = %s",
+            (match_id,),
+        )
+        assert cur.fetchone() == (0, 1, 1, 0)
+
+
+def test_edit_match_winner_rejects_invalid_value(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    result = _persist_simple_team_match(pg_conn)
+
+    with pytest.raises(ValueError):
+        edit_match_winner(pg_conn, result["match_id"], "SITH")

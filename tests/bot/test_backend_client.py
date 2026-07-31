@@ -116,3 +116,45 @@ def test_submit_answer_wraps_answer_in_body():
     assert response.status_code == 200
     assert captured["url"] == "/matches/9/answer"
     assert captured["json"] == {"answer": {"ref_player_id": 2}}
+
+
+def test_edit_match_player_patches_updates_for_named_player():
+    captured = {}
+
+    def handler(request):
+        captured["method"] = request.method
+        captured["url"] = request.url.path
+        captured["json"] = json.loads(request.content)
+        return httpx.Response(200, json={"status": "persisted", "match_id": 1})
+
+    async def run():
+        async with _client(handler) as client:
+            return await backend_client.edit_match_player(client, 1, "Vader", {"score": 2000})
+
+    response = _run(run())
+
+    assert response.status_code == 200
+    assert captured == {
+        "method": "PATCH",
+        "url": "/matches/1/players/Vader",
+        "json": {"updates": {"score": 2000}},
+    }
+
+
+def test_edit_match_winner_patches_winner_field():
+    captured = {}
+
+    def handler(request):
+        captured["url"] = request.url.path
+        captured["json"] = json.loads(request.content)
+        return httpx.Response(200, json={"status": "persisted", "match_id": 1, "winner": "REBEL"})
+
+    async def run():
+        async with _client(handler) as client:
+            return await backend_client.edit_match_winner(client, 1, "REBEL")
+
+    response = _run(run())
+
+    assert response.status_code == 200
+    assert captured["url"] == "/matches/1/winner"
+    assert captured["json"] == {"winner": "REBEL"}

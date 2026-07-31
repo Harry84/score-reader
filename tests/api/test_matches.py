@@ -139,3 +139,74 @@ def test_post_matches_answer_resumes_a_paused_workflow(mock_extract, pg_conn, cl
     body = answer_response.json()
     assert body["status"] == "persisted"
     assert "match_id" in body
+
+
+def _persist_unambiguous_match(mock_extract, pg_conn, client):
+    imperial_team_id = _make_ref_team(pg_conn, "181st")
+    rebel_team_id = _make_ref_team(pg_conn, "Rogue Squadron")
+    _make_ref_player(pg_conn, "Vader", imperial_team_id, "Flex")
+    _make_ref_player(pg_conn, "Tarkin", imperial_team_id, "Support")
+    _make_ref_player(pg_conn, "Wedge", rebel_team_id, "Flex")
+    _make_ref_player(pg_conn, "Luke", rebel_team_id, "Support")
+    pg_conn.commit()
+
+    mock_extract.return_value = _unambiguous_extracted_data()
+    response = client.post(
+        "/matches",
+        data={
+            "campaign_id": "campaign-1",
+            "turn_id": "turn-1",
+            "system_id": str(_get_system_id(pg_conn)),
+            "match_type": "team",
+            "screenshot_ref": "discord://message/edit-test",
+        },
+        files={"image": ("screenshot.png", b"fake-screenshot-bytes", "image/png")},
+    )
+    return response.json()
+
+
+@patch("api.main.extract_from_image_bytes")
+def test_patch_match_player_updates_stats(mock_extract, pg_conn, client):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    match = _persist_unambiguous_match(mock_extract, pg_conn, client)
+
+    response = client.patch(
+        f"/matches/{match['match_id']}/players/Vader",
+        json={"updates": {"score": 2000, "kills": 10}},
+    )
+
+    assert response.status_code == 200
+    vader = next(p for p in response.json()["players"]["imperial"] if p["player"] == "Vader")
+    assert vader["score"] == 2000
+    assert vader["kills"] == 10
+
+
+@patch("api.main.extract_from_image_bytes")
+def test_patch_match_player_unknown_player_returns_404(mock_extract, pg_conn, client):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    match = _persist_unambiguous_match(mock_extract, pg_conn, client)
+
+    response = client.patch(
+        f"/matches/{match['match_id']}/players/Nobody",
+        json={"updates": {"score": 1}},
+    )
+
+    assert response.status_code == 404
+
+
+@patch("api.main.extract_from_image_bytes")
+def test_patch_match_winner_flips_result(mock_extract, pg_conn, client):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    match = _persist_unambiguous_match(mock_extract, pg_conn, client)
+    assert match["winner"] == "IMPERIAL"
+
+    response = client.patch(f"/matches/{match['match_id']}/winner", json={"winner": "REBEL"})
+
+    assert response.status_code == 200
+    assert response.json()["winner"] == "REBEL"
