@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 # Configuration
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
-CLAUDE_MODEL = "claude-3-7-sonnet-20250219"
+CLAUDE_MODEL = "claude-sonnet-5"
 MAX_RETRIES = 3
 RETRY_DELAY = 5  # Increased retry delay to 5 seconds
 
