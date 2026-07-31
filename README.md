@@ -2,7 +2,56 @@
 
 This project uses AI vision capabilities to extract and analyze scores from Star Wars Squadrons game screenshots, building a comprehensive database of match results and player statistics. It includes ELO rating systems to track both team and individual player skill levels.
 
+## Quickstart: Discord score bot backend
+
+The current, actively-developed system: a Discord bot posts a screenshot, a FastAPI backend extracts it via Claude vision and persists a Match to Postgres, recomputing ELO synchronously. See `ROADMAP.md` for the full implementation plan and status, and `docs/adr/` for the architectural decisions behind it. (Everything below "Project Structure" documents the older, pre-Discord CLI/SQLite workflow it's superseding - see the note there.)
+
+**Prerequisites:** Docker, Python 3.10+, a Discord bot application (token from the [Discord Developer Portal](https://discord.com/developers/applications), invited to your test server with the `bot` + `applications.commands` scopes, View Channels/Send Messages/Read Message History permissions, and the **Message Content** privileged intent enabled).
+
+1.  **Start Postgres:**
+    ```bash
+    docker compose up -d postgres
+    ```
+
+2.  **Install dependencies:**
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+3.  **Configure `.env`** in the project root:
+    ```
+    DATABASE_URL=postgresql://squadrons:squadrons@localhost:5433/squadrons
+    ANTHROPIC_API_KEY=your-claude-api-key
+    DISCORD_BOT_TOKEN=your-bot-token
+    ```
+    Optional bot settings (`bot/config.py`), each with a sensible default if omitted: `BACKEND_URL` (default `http://localhost:8001`), `BOT_CHANNEL_NAME` (default `ai-test`), `BOT_CAMPAIGN_ID`, `BOT_TURN_ID`, `BOT_SYSTEM_ID`, `BOT_MATCH_TYPE` — the last four are hardcoded/crude by design for now (ROADMAP Phase 3); a real campaign integration will supply them properly later (Phase 5).
+
+4.  **Apply database migrations:**
+    ```bash
+    python -m db.run_migration
+    ```
+
+5.  **Start the backend** (one terminal):
+    ```bash
+    python -m uvicorn api.main:app --port 8001
+    ```
+
+6.  **Start the bot** (a second terminal):
+    ```bash
+    python -m bot.main
+    ```
+
+7.  Post a screenshot in the Discord channel named by `BOT_CHANNEL_NAME` and watch it become a persisted Match. Try `!help` in that channel for the full command list (team/roster setup, post-persist editing).
+
+Neither process auto-reloads on code changes — restart both after editing. Run the automated test suite with:
+```bash
+python -m pytest tests/
+```
+(`tests/test_stats_reader.py` and `tests/test_score_extractor.py` are pre-existing, unrelated failures — see `ROADMAP.md`'s loose-ends notes.)
+
 ## Project Structure
+
+> **Note:** the structure and workflow below describe the original CLI/SQLite pipeline (`score_extractor` + `stats_reader`, manual review, local `.db` files). It predates the Discord bot backend above and is being superseded by it (ROADMAP Phase 0's `squadrons_stats.db`/`squadrons_reference.db` history was migrated into Postgres). Kept here for reference until it's fully retired.
 
 ```
 Star Wars Squadrons Score Reader
