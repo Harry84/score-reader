@@ -59,3 +59,27 @@ def test_non_captain_attach_returns_403(pg_conn, client):
     )
 
     assert response.status_code == 403
+
+
+def test_find_players_by_name(pg_conn, client):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    client.post("/players", json={"name": "Wedge Antilles"})
+    client.post("/players", json={"name": "Biggs Darklighter"})
+
+    response = client.get("/players", params={"name": "wedge"})
+
+    assert response.status_code == 200
+    names = [p["name"] for p in response.json()]
+    assert names == ["Wedge Antilles"]
+
+
+def test_find_players_by_name_no_match_returns_empty_list(pg_conn, client):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    response = client.get("/players", params={"name": "Nobody"})
+
+    assert response.status_code == 200
+    assert response.json() == []

@@ -14,6 +14,7 @@ from teams.onboarding import (
     attach_player_to_roster,
     create_player,
     create_team,
+    find_players_by_name,
     get_team,
     list_teams,
     set_captain,
@@ -72,6 +73,11 @@ def create_player_route(body: CreatePlayerRequest, pg_conn=Depends(get_pg_conn))
         alias=body.alias,
         source_file=body.source_file,
     )
+
+
+@router.get("/players")
+def find_players_route(name: str, pg_conn=Depends(get_pg_conn)):
+    return find_players_by_name(pg_conn, name)
 
 
 @router.post("/teams/{team_id}/captain")

@@ -72,6 +72,30 @@ def get_team(pg_conn, team_id):
     return {"id": row[0], "name": row[1], "captain_discord_id": row[2]}
 
 
+def find_players_by_name(pg_conn, name):
+    """Case-insensitive partial-name search over ref_players (open lookup).
+
+    Used by the score bot to resolve a typed player name into a
+    ref_player_id before calling attach_player_to_roster - may return
+    several candidates if the name is ambiguous.
+    """
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, name, primary_team_id, primary_role, alias
+            FROM ref_players
+            WHERE name ILIKE %s
+            ORDER BY name
+            """,
+            (f"%{name}%",),
+        )
+        rows = cur.fetchall()
+    return [
+        {"id": r[0], "name": r[1], "primary_team_id": r[2], "primary_role": r[3], "alias": r[4]}
+        for r in rows
+    ]
+
+
 def attach_player_to_roster(pg_conn, team_id, requesting_discord_id, ref_player_id):
     """Attach an existing canonical player to a team's roster (captain action).
 

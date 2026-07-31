@@ -5,6 +5,7 @@ from teams.onboarding import (
     attach_player_to_roster,
     create_player,
     create_team,
+    find_players_by_name,
     get_team,
     list_teams,
     set_captain,
@@ -107,3 +108,37 @@ def test_attach_player_to_nonexistent_team_raises(pg_conn):
 
     with pytest.raises(ValueError):
         attach_player_to_roster(pg_conn, 999999, "discord-user-1", player["id"])
+
+
+def test_find_players_by_name_matches_case_insensitive_substring(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    wedge = create_player(pg_conn, "Wedge Antilles")
+    create_player(pg_conn, "Biggs Darklighter")
+
+    matches = find_players_by_name(pg_conn, "wedge")
+
+    assert [m["id"] for m in matches] == [wedge["id"]]
+    assert matches[0]["name"] == "Wedge Antilles"
+
+
+def test_find_players_by_name_returns_empty_list_when_no_match(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    create_player(pg_conn, "Wedge Antilles")
+
+    assert find_players_by_name(pg_conn, "Nobody") == []
+
+
+def test_find_players_by_name_returns_multiple_candidates(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    create_player(pg_conn, "Wedge Antilles")
+    create_player(pg_conn, "Wedge Two")
+
+    matches = find_players_by_name(pg_conn, "Wedge")
+
+    assert [m["name"] for m in matches] == ["Wedge Antilles", "Wedge Two"]
