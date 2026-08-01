@@ -118,6 +118,24 @@ def test_submit_answer_wraps_answer_in_body():
     assert captured["json"] == {"answer": {"ref_player_id": 2}}
 
 
+def test_cancel_match_posts_to_cancel_endpoint():
+    captured = {}
+
+    def handler(request):
+        captured["method"] = request.method
+        captured["url"] = request.url.path
+        return httpx.Response(200, json={"status": "cancelled", "pending_match_id": 9})
+
+    async def run():
+        async with _client(handler) as client:
+            return await backend_client.cancel_match(client, 9)
+
+    response = _run(run())
+
+    assert response.status_code == 200
+    assert captured == {"method": "POST", "url": "/matches/9/cancel"}
+
+
 def test_edit_match_player_patches_updates_for_named_player():
     captured = {}
 

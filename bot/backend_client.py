@@ -47,6 +47,10 @@ async def submit_answer(client, pending_match_id, answer):
     return await client.post(f"/matches/{pending_match_id}/answer", json={"answer": answer})
 
 
+async def cancel_match(client, pending_match_id):
+    return await client.post(f"/matches/{pending_match_id}/cancel")
+
+
 async def edit_match_player(client, match_id, player_name, updates):
     return await client.patch(
         f"/matches/{match_id}/players/{player_name}", json={"updates": updates}

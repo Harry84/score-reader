@@ -3,6 +3,7 @@ import pytest
 from db.migrate_runner import apply_schema
 from ingestion.workflow import (
     DuplicateMatchError,
+    cancel_ingestion,
     check_duplicate_image,
     edit_match_player,
     edit_match_winner,
@@ -1067,6 +1068,68 @@ def test_wrong_roster_size_pauses_for_confirmation(pg_conn):
 
     result = submit_answer(pg_conn, result["pending_match_id"], {"confirm": True})
     assert result["status"] == "persisted"
+
+
+def test_cancel_ingestion_marks_a_paused_match_cancelled(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    imperial_team_id = _make_ref_team(pg_conn, "181st")
+    rebel_team_id = _make_ref_team(pg_conn, "Rogue Squadron")
+    _make_ref_player(pg_conn, "Vader", imperial_team_id, "Flex")
+    _make_ref_player(pg_conn, "Wedge", rebel_team_id, "Flex")
+    pg_conn.commit()
+
+    system_id = _get_system_id(pg_conn)
+    extracted_data = {
+        "match_result": "IMPERIAL VICTORY",
+        "teams": {
+            "imperial": {"players": [_player("Vader", "Titan One", 1675, 4, 2, 1, 18, 30139)]},
+            "rebel": {"players": [_player("Wedge", "Vanguard One", 1200, 2, 4, 0, 10, 0)]},
+        },
+    }
+
+    paused = start_ingestion(
+        pg_conn,
+        campaign_id="campaign-1",
+        turn_id="turn-1",
+        system_id=system_id,
+        match_type="team",
+        screenshot_ref="discord://message/to-cancel",
+        extracted_data=extracted_data,
+    )
+    assert paused["status"] == "awaiting_roster_size:imperial"
+
+    result = cancel_ingestion(pg_conn, paused["pending_match_id"])
+    assert result == {"status": "cancelled", "pending_match_id": paused["pending_match_id"]}
+
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "SELECT status FROM pending_matches WHERE id = %s", (paused["pending_match_id"],)
+        )
+        assert cur.fetchone()[0] == "cancelled"
+
+    # Terminal - can't cancel a match that's already cancelled or resume it.
+    with pytest.raises(ValueError):
+        cancel_ingestion(pg_conn, paused["pending_match_id"])
+
+
+def test_cancel_ingestion_rejects_already_persisted_match(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    result = _persist_simple_team_match(pg_conn)
+
+    with pytest.raises(ValueError):
+        cancel_ingestion(pg_conn, result["pending_match_id"])
+
+
+def test_cancel_ingestion_rejects_unknown_id(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    with pytest.raises(ValueError):
+        cancel_ingestion(pg_conn, 999999)
 
 
 def test_missing_field_pauses_for_a_value(pg_conn):

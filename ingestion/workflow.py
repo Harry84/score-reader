@@ -672,6 +672,31 @@ def edit_match_winner(pg_conn, match_id, winner):
     return _build_match_summary(pg_conn, match_id)
 
 
+def cancel_ingestion(pg_conn, pending_match_id):
+    """Abandons a pending match stuck on an awaiting_* pause - e.g. the
+    screenshot turned out to be bad (wrong image, unsalvageable extraction)
+    and shouldn't be confirmed past validation just to get rid of it.
+    Terminal like 'persisted': a cancelled match can't be resumed, and
+    there's no un-cancel - re-post the screenshot to try again.
+    """
+    with pg_conn.cursor() as cur:
+        cur.execute("SELECT status FROM pending_matches WHERE id = %s", (pending_match_id,))
+        row = cur.fetchone()
+        if row is None:
+            raise ValueError(f"No pending match with id {pending_match_id}")
+        status = row[0]
+        if status == "persisted":
+            raise ValueError(f"Match {pending_match_id} is already persisted - nothing to cancel")
+        if status == "cancelled":
+            raise ValueError(f"Match {pending_match_id} is already cancelled")
+        cur.execute(
+            "UPDATE pending_matches SET status = 'cancelled', updated_at = now() WHERE id = %s",
+            (pending_match_id,),
+        )
+    pg_conn.commit()
+    return {"status": "cancelled", "pending_match_id": pending_match_id}
+
+
 def _advance(pg_conn, pending_match_id):
     pending_match = _load_pending_match(pg_conn, pending_match_id)
     answers = pending_match["answers"]

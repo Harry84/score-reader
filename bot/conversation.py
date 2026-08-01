@@ -47,6 +47,7 @@ def render_error_detail(detail):
 INGEST_TRIGGER_EMOJI = "\U0001F4E5"  # inbox tray emoji
 INGESTED_EMOJI = "✅"  # white check mark emoji
 PROCESSING_EMOJI = "⏳"  # hourglass (not done) emoji
+CANCELLED_EMOJI = "❌"  # cross mark emoji
 
 
 def is_admin_reactor(role_names, admin_role_name):
@@ -62,6 +63,13 @@ def render_screenshot_received():
 
 
 def render_question(question):
+    text = _render_question_body(question)
+    if not is_dead_end(question):
+        text += "\n(Or reply `cancel` to abandon this screenshot.)"
+    return text
+
+
+def _render_question_body(question):
     qtype = question["type"]
     if qtype == "player_match":
         lines = [f"Couldn't match player '{question['player_name']}'. Did you mean:"]
@@ -94,6 +102,10 @@ def render_question(question):
         return f"'{question['player_name']}' is missing '{question['field']}'. Reply with {kind}."
 
     raise ValueError(f"Don't know how to render a '{qtype}' question yet.")
+
+
+def render_cancelled():
+    return f"{CANCELLED_EMOJI} Cancelled - this screenshot was not entered. Re-post it to try again."
 
 
 def render_rejection(question):

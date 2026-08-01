@@ -8,6 +8,7 @@ from bot.conversation import (
     parse_answer,
     parse_edit_command,
     parse_edit_updates,
+    render_cancelled,
     render_error_detail,
     render_help,
     render_match_summary,
@@ -144,6 +145,21 @@ def test_render_roster_size_question():
     assert "3" in text
     assert "5" in text
     assert "confirm" in text.lower()
+
+
+def test_render_question_mentions_cancel_when_answerable():
+    question = {"type": "roster_size", "faction": "imperial", "count": 3, "expected": 5}
+    assert "cancel" in render_question(question).lower()
+
+
+def test_render_question_omits_cancel_for_dead_end():
+    question = {"type": "player_match", "player_name": "Nobody", "candidates": []}
+    assert "cancel" not in render_question(question).lower()
+
+
+def test_render_cancelled_mentions_re_posting():
+    text = render_cancelled()
+    assert "re-post" in text.lower() or "repost" in text.lower()
 
 
 def test_render_missing_field_question_numeric():

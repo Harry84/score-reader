@@ -256,6 +256,58 @@ def test_post_matches_answer_resumes_a_paused_workflow(mock_extract, pg_conn, cl
     assert "match_id" in body
 
 
+@patch("api.main.extract_from_image_bytes")
+def test_post_matches_cancel_abandons_a_paused_workflow(mock_extract, pg_conn, client):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    imperial_team_id = _make_ref_team(pg_conn, "181st")
+    rebel_team_id = _make_ref_team(pg_conn, "Rogue Squadron")
+    _make_ref_player(pg_conn, "Vader", imperial_team_id, "Flex")
+    _make_ref_player(pg_conn, "Wedge", rebel_team_id, "Flex")
+    pg_conn.commit()
+
+    system_id = _get_system_id(pg_conn)
+    mock_extract.return_value = {
+        "match_result": "IMPERIAL VICTORY",
+        "teams": {
+            "imperial": {"players": [_player("Vader", "Titan One", 1675, 4, 2, 1, 18, 30139)]},
+            "rebel": {"players": [_player("Wedge", "Vanguard One", 1200, 2, 4, 0, 10, 0)]},
+        },
+    }
+
+    start_response = client.post(
+        "/matches",
+        data={
+            "campaign_id": "campaign-1",
+            "turn_id": "turn-1",
+            "system_id": str(system_id),
+            "match_type": "team",
+            "screenshot_ref": "discord://message/to-cancel",
+        },
+        files={"image": ("screenshot.png", b"fake-screenshot-bytes", "image/png")},
+    )
+    assert start_response.status_code == 200
+    paused = start_response.json()
+    assert paused["status"] == "awaiting_roster_size:imperial"
+
+    cancel_response = client.post(f"/matches/{paused['pending_match_id']}/cancel")
+    assert cancel_response.status_code == 200
+    assert cancel_response.json() == {"status": "cancelled", "pending_match_id": paused["pending_match_id"]}
+
+    # Terminal - can't cancel it a second time.
+    second_cancel = client.post(f"/matches/{paused['pending_match_id']}/cancel")
+    assert second_cancel.status_code == 404
+
+
+def test_post_matches_cancel_unknown_id_returns_404(pg_conn, client):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    response = client.post("/matches/999999/cancel")
+    assert response.status_code == 404
+
+
 def _persist_unambiguous_match(mock_extract, pg_conn, client):
     imperial_team_id = _make_ref_team(pg_conn, "181st")
     rebel_team_id = _make_ref_team(pg_conn, "Rogue Squadron")

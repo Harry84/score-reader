@@ -16,6 +16,7 @@ from api.teams import router as teams_router
 from ingestion.extraction import extract_from_image_bytes
 from ingestion.workflow import (
     DuplicateMatchError,
+    cancel_ingestion,
     check_duplicate_image,
     edit_match_player,
     edit_match_winner,
@@ -86,6 +87,14 @@ async def create_match(
 @app.post("/matches/{pending_match_id}/answer")
 def answer_match(pending_match_id: int, body: AnswerRequest, pg_conn=Depends(get_pg_conn)):
     return submit_answer(pg_conn, pending_match_id, body.answer)
+
+
+@app.post("/matches/{pending_match_id}/cancel")
+def cancel_match_route(pending_match_id: int, pg_conn=Depends(get_pg_conn)):
+    try:
+        return cancel_ingestion(pg_conn, pending_match_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
 
 @app.patch("/matches/{match_id}/players/{player_name}")

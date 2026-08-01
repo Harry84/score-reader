@@ -11,6 +11,7 @@ import httpx
 
 from bot import backend_client, config
 from bot.conversation import (
+    CANCELLED_EMOJI,
     INGEST_TRIGGER_EMOJI,
     INGESTED_EMOJI,
     PROCESSING_EMOJI,
@@ -19,6 +20,7 @@ from bot.conversation import (
     parse_answer,
     parse_edit_command,
     parse_edit_updates,
+    render_cancelled,
     render_error_detail,
     render_help,
     render_match_summary,
@@ -77,6 +79,16 @@ async def _handle_result(message, result, screenshot_message):
 
 
 async def _handle_pending_answer(message, pending):
+    if message.content.strip().lower() == "cancel":
+        response = await backend_client.cancel_match(http_client, pending["pending_match_id"])
+        if response.status_code != 200:
+            await _reply_error(message, response)
+            return
+        del _pending_questions[message.channel.id]
+        await pending["screenshot_message"].add_reaction(CANCELLED_EMOJI)
+        await message.reply(render_cancelled())
+        return
+
     try:
         answer = parse_answer(pending["question"], message.content)
     except ValueError as e:
