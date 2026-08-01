@@ -109,6 +109,108 @@ def test_post_matches_extracts_and_persists_unambiguous_screenshot(
 
 
 @patch("api.main.extract_from_image_bytes")
+def test_post_matches_rejects_duplicate_image_without_calling_claude(mock_extract, pg_conn, client):
+    """Reposting the exact same image bytes should be rejected by the cheap
+    pre-extraction image-hash check (ingestion.workflow.check_duplicate_image)
+    before extract_from_image_bytes (the paid Claude call) ever runs again."""
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    imperial_team_id = _make_ref_team(pg_conn, "181st")
+    rebel_team_id = _make_ref_team(pg_conn, "Rogue Squadron")
+    _make_ref_player(pg_conn, "Vader", imperial_team_id, "Flex")
+    _make_ref_player(pg_conn, "Tarkin", imperial_team_id, "Support")
+    _make_ref_player(pg_conn, "Wedge", rebel_team_id, "Flex")
+    _make_ref_player(pg_conn, "Luke", rebel_team_id, "Support")
+    pg_conn.commit()
+
+    system_id = _get_system_id(pg_conn)
+    mock_extract.return_value = _unambiguous_extracted_data()
+
+    def post_screenshot(screenshot_ref):
+        return client.post(
+            "/matches",
+            data={
+                "campaign_id": "campaign-1",
+                "turn_id": "turn-1",
+                "system_id": str(system_id),
+                "match_type": "team",
+                "screenshot_ref": screenshot_ref,
+            },
+            files={"image": ("screenshot.png", b"fake-screenshot-bytes", "image/png")},
+        )
+
+    first = post_screenshot("discord://message/first")
+    assert first.status_code == 200
+    first_body = _confirm_roster_sizes(client, first.json())
+    assert first_body["status"] == "persisted"
+    assert mock_extract.call_count == 1
+
+    second = post_screenshot("discord://message/second")
+
+    assert second.status_code == 409
+    detail = second.json()["detail"]
+    assert detail["message"] == (
+        f"Match already entered as match {first_body['match_id']} "
+        "(this exact screenshot was already uploaded)"
+    )
+    assert detail["existing_match"]["match_id"] == first_body["match_id"]
+    # The whole point of the pre-extraction check: no second Claude call.
+    assert mock_extract.call_count == 1
+
+
+@patch("api.main.extract_from_image_bytes")
+def test_post_matches_rejects_same_stats_from_a_different_image_with_409(mock_extract, pg_conn, client):
+    """A *different* image that happens to extract to identical stats should
+    still be caught, just by the later stats-hash check (extraction has to
+    run first here, since the images themselves differ)."""
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    imperial_team_id = _make_ref_team(pg_conn, "181st")
+    rebel_team_id = _make_ref_team(pg_conn, "Rogue Squadron")
+    _make_ref_player(pg_conn, "Vader", imperial_team_id, "Flex")
+    _make_ref_player(pg_conn, "Tarkin", imperial_team_id, "Support")
+    _make_ref_player(pg_conn, "Wedge", rebel_team_id, "Flex")
+    _make_ref_player(pg_conn, "Luke", rebel_team_id, "Support")
+    pg_conn.commit()
+
+    system_id = _get_system_id(pg_conn)
+    mock_extract.return_value = _unambiguous_extracted_data()
+
+    def post_screenshot(screenshot_ref, image_bytes):
+        return client.post(
+            "/matches",
+            data={
+                "campaign_id": "campaign-1",
+                "turn_id": "turn-1",
+                "system_id": str(system_id),
+                "match_type": "team",
+                "screenshot_ref": screenshot_ref,
+            },
+            files={"image": ("screenshot.png", image_bytes, "image/png")},
+        )
+
+    first = post_screenshot("discord://message/first", b"first-screenshot-bytes")
+    assert first.status_code == 200
+    first_body = _confirm_roster_sizes(client, first.json())
+    assert first_body["status"] == "persisted"
+
+    second = post_screenshot("discord://message/second", b"a-visibly-different-screenshot")
+
+    assert second.status_code == 409
+    detail = second.json()["detail"]
+    assert detail["message"] == (
+        f"Match already entered as match {first_body['match_id']} "
+        "(the same stats were already recorded from a different screenshot)"
+    )
+    assert detail["existing_match"]["match_id"] == first_body["match_id"]
+    # Extraction *did* run the second time - different bytes, so the cheap
+    # image-hash check couldn't short-circuit it.
+    assert mock_extract.call_count == 2
+
+
+@patch("api.main.extract_from_image_bytes")
 def test_post_matches_answer_resumes_a_paused_workflow(mock_extract, pg_conn, client):
     apply_schema(pg_conn)
     pg_conn.commit()

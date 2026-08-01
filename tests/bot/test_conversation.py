@@ -8,6 +8,7 @@ from bot.conversation import (
     parse_answer,
     parse_edit_command,
     parse_edit_updates,
+    render_error_detail,
     render_help,
     render_match_summary,
     render_question,
@@ -321,6 +322,40 @@ def test_render_match_summary_skips_empty_faction():
     text = render_match_summary(result)
     assert "IMPERIAL" not in text
     assert "Wedge" in text
+
+
+def test_render_error_detail_plain_string_passthrough():
+    assert render_error_detail("No player 'Nobody' on match 1") == "No player 'Nobody' on match 1"
+
+
+def test_render_error_detail_duplicate_match_shape_renders_summary():
+    detail = {
+        "message": "Match already entered as match 42",
+        "existing_match": {
+            "status": "persisted",
+            "match_id": 42,
+            "winner": "IMPERIAL",
+            "players": {
+                "imperial": [
+                    {
+                        "player": "Vader",
+                        "role": "Flex",
+                        "score": 1675,
+                        "kills": 4,
+                        "deaths": 2,
+                        "assists": 1,
+                        "ai_kills": 18,
+                        "cap_ship_damage": 30139,
+                    }
+                ],
+                "rebel": [],
+            },
+        },
+    }
+    text = render_error_detail(detail)
+    assert "Match already entered as match 42" in text
+    assert "Vader" in text
+    assert "42" in text
 
 
 def test_parse_answer_rejects_non_numeric_for_player_match():

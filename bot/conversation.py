@@ -27,6 +27,16 @@ def render_match_summary(result):
     return "\n".join(lines)
 
 
+def render_error_detail(detail):
+    """Formats a backend error response's `detail` for display - either a
+    plain string (most errors) or the structured duplicate-match shape
+    {"message": ..., "existing_match": ...} that POST /matches returns on a
+    409 (ingestion.workflow.DuplicateMatchError)."""
+    if isinstance(detail, dict) and "existing_match" in detail:
+        return f"{detail['message']}:\n{render_match_summary(detail['existing_match'])}"
+    return str(detail)
+
+
 # Reaction the bot pre-adds to a screenshot, for an admin to click to trigger
 # ingestion - see is_admin_reactor. INGESTED_EMOJI goes on the same message
 # once the resulting match actually persists (ADR-0001). PROCESSING_EMOJI is

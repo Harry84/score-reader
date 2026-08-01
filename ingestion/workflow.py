@@ -33,8 +33,99 @@ from stats.player_elo import recompute_player_elo
 from stats.team_elo import recompute_team_elo
 
 
+class DuplicateMatchError(Exception):
+    """Raised when a match with this exact fingerprint already exists in
+    this campaign - either the same screenshot re-uploaded byte-for-byte
+    (check_duplicate_image, reason="image") or the same stats extracted
+    from a different screenshot (_check_duplicate, reason="stats"). Hard
+    stop, no override - if this is ever a false positive, fix/delete the
+    existing match directly rather than forcing a second one through.
+    """
+
+    _REASON_DESCRIPTIONS = {
+        "image": "this exact screenshot was already uploaded",
+        "stats": "the same stats were already recorded from a different screenshot",
+    }
+
+    def __init__(self, existing_match_id, existing_summary, reason):
+        self.existing_match_id = existing_match_id
+        self.existing_summary = existing_summary
+        self.reason = reason
+        description = self._REASON_DESCRIPTIONS[reason]
+        super().__init__(f"Match already entered as match {existing_match_id} ({description})")
+
+
 def _player_hash(name):
     return hashlib.sha256(name.encode()).hexdigest()[:16]
+
+
+def _compute_stats_hash(extracted_data):
+    """Canonical fingerprint of a match's actual stats, independent of
+    extraction order - used to catch the same screenshot being ingested
+    twice. Deliberately excludes screenshot_ref/turn_id/system_id: those
+    identify *where* a match was posted, not what happened in it, and a
+    real duplicate could plausibly get reposted with a different
+    screenshot_ref.
+    """
+    canonical = {
+        "match_result": extracted_data["match_result"],
+        "teams": {
+            faction: sorted(
+                (
+                    p.get("player"),
+                    p.get("position"),
+                    p.get("score"),
+                    p.get("kills"),
+                    p.get("deaths"),
+                    p.get("assists"),
+                    p.get("ai_kills"),
+                    p.get("cap_ship_damage"),
+                )
+                for p in extracted_data["teams"][faction]["players"]
+            )
+            for faction in ("imperial", "rebel")
+        },
+    }
+    return hashlib.sha256(json.dumps(canonical, sort_keys=True).encode()).hexdigest()[:16]
+
+
+def _check_duplicate(pg_conn, campaign_id, extracted_data):
+    stats_hash = _compute_stats_hash(extracted_data)
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "SELECT id FROM matches WHERE campaign_id = %s AND stats_hash = %s",
+            (campaign_id, stats_hash),
+        )
+        row = cur.fetchone()
+    if row is not None:
+        raise DuplicateMatchError(row[0], _build_match_summary(pg_conn, row[0]), reason="stats")
+
+
+def check_duplicate_image(pg_conn, campaign_id, image_bytes):
+    """Cheap pre-extraction duplicate guard: rejects a byte-for-byte repeat
+    of an already-persisted screenshot before ever calling the (paid) Claude
+    vision API. Narrower than _check_duplicate/_compute_stats_hash (which
+    catches the same match re-extracted from a *different* image, e.g. a
+    second genuine screenshot of the same result screen) - this only
+    catches literally the same image file being posted twice. Same hard-stop
+    DuplicateMatchError as the stats-based check, same rendering, same
+    no-override rule. Not a private helper (unlike _check_duplicate) since
+    it has to run in api/main.py before extraction, not inside
+    start_ingestion which only ever sees already-extracted data.
+
+    Returns the computed hash so the caller can pass it straight into
+    start_ingestion without recomputing it.
+    """
+    image_hash = hashlib.sha256(image_bytes).hexdigest()[:16]
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "SELECT id FROM matches WHERE campaign_id = %s AND image_hash = %s",
+            (campaign_id, image_hash),
+        )
+        row = cur.fetchone()
+    if row is not None:
+        raise DuplicateMatchError(row[0], _build_match_summary(pg_conn, row[0]), reason="image")
+    return image_hash
 
 
 def _find_ref_player(pg_conn, name):
@@ -288,12 +379,12 @@ def _load_pending_match(pg_conn, pending_match_id):
     with pg_conn.cursor() as cur:
         cur.execute(
             """
-            SELECT campaign_id, turn_id, system_id, match_type, extracted_data, answers
+            SELECT campaign_id, turn_id, system_id, match_type, extracted_data, answers, image_hash
             FROM pending_matches WHERE id = %s
             """,
             (pending_match_id,),
         )
-        campaign_id, turn_id, system_id, match_type, extracted_data, answers = cur.fetchone()
+        campaign_id, turn_id, system_id, match_type, extracted_data, answers, image_hash = cur.fetchone()
     return {
         "campaign_id": campaign_id,
         "turn_id": turn_id,
@@ -301,6 +392,7 @@ def _load_pending_match(pg_conn, pending_match_id):
         "match_type": match_type,
         "extracted_data": extracted_data,
         "answers": answers,
+        "image_hash": image_hash,
     }
 
 
@@ -335,6 +427,7 @@ def _persist(pg_conn, pending_match_id, pending_match, resolved):
     extracted_data = pending_match["extracted_data"]
     winner = _normalize_winner(extracted_data["match_result"])
     match_type = pending_match["match_type"]
+    stats_hash = _compute_stats_hash(extracted_data)
 
     if match_type == "team":
         team_id_by_faction = {
@@ -351,8 +444,8 @@ def _persist(pg_conn, pending_match_id, pending_match, resolved):
     with pg_conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO matches (imperial_team_id, rebel_team_id, winner, match_type, campaign_id, turn_id, system_id)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO matches (imperial_team_id, rebel_team_id, winner, match_type, campaign_id, turn_id, system_id, stats_hash, image_hash)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
             """,
             (
@@ -363,6 +456,8 @@ def _persist(pg_conn, pending_match_id, pending_match, resolved):
                 pending_match["campaign_id"],
                 pending_match["turn_id"],
                 pending_match["system_id"],
+                stats_hash,
+                pending_match["image_hash"],
             ),
         )
         match_id = cur.fetchone()[0]
@@ -610,17 +705,26 @@ def _advance(pg_conn, pending_match_id):
 
 
 def start_ingestion(
-    pg_conn, campaign_id, turn_id, system_id, match_type, screenshot_ref, extracted_data
+    pg_conn, campaign_id, turn_id, system_id, match_type, screenshot_ref, extracted_data,
+    image_hash=None,
 ):
+    """image_hash: precomputed by check_duplicate_image (api/main.py calls it
+    before extraction to avoid a wasted Claude call on an exact image repeat)
+    - stored through to the eventual matches row so future posts can be
+    checked against it too. Optional/defaults to None for callers (mostly
+    tests) that don't go through that pre-check.
+    """
+    _check_duplicate(pg_conn, campaign_id, extracted_data)
+
     with pg_conn.cursor() as cur:
         cur.execute(
             """
             INSERT INTO pending_matches
-                (campaign_id, turn_id, system_id, match_type, screenshot_ref, status, extracted_data, answers)
-            VALUES (%s, %s, %s, %s, %s, 'extracted', %s, '{}'::jsonb)
+                (campaign_id, turn_id, system_id, match_type, screenshot_ref, status, extracted_data, answers, image_hash)
+            VALUES (%s, %s, %s, %s, %s, 'extracted', %s, '{}'::jsonb, %s)
             RETURNING id
             """,
-            (campaign_id, turn_id, system_id, match_type, screenshot_ref, json.dumps(extracted_data)),
+            (campaign_id, turn_id, system_id, match_type, screenshot_ref, json.dumps(extracted_data), image_hash),
         )
         pending_match_id = cur.fetchone()[0]
     pg_conn.commit()

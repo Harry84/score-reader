@@ -19,6 +19,7 @@ from bot.conversation import (
     parse_answer,
     parse_edit_command,
     parse_edit_updates,
+    render_error_detail,
     render_help,
     render_match_summary,
     render_question,
@@ -53,7 +54,7 @@ async def _reply_error(message, response):
         detail = response.json().get("detail", response.text)
     except ValueError:
         detail = response.text
-    await message.reply(f"Error ({response.status_code}): {detail}")
+    await message.reply(f"Error ({response.status_code}): {render_error_detail(detail)}")
 
 
 async def _handle_result(message, result, screenshot_message):
@@ -259,7 +260,23 @@ async def on_raw_reaction_add(payload):
     role_names = (role.name for role in payload.member.roles)
     if not is_admin_reactor(role_names, config.BOT_ADMIN_ROLE_NAME):
         return
+
+    # _pending_screenshots already stops the same message being processed
+    # twice within one bot session (its entry is deleted below regardless of
+    # whether _handle_screenshot succeeds or fails), but that dict is
+    # in-memory only and lost on restart. Re-fetching the message and
+    # checking for the bot's own INGESTED_EMOJI catches an already-ingested
+    # screenshot even if that in-memory state is ever wrong - cheap next to
+    # the alternative of silently re-hitting the paid Claude vision API.
+    fresh_message = await message.channel.fetch_message(payload.message_id)
+    already_ingested = any(
+        str(reaction.emoji) == INGESTED_EMOJI and reaction.me
+        for reaction in fresh_message.reactions
+    )
     del _pending_screenshots[payload.message_id]
+    if already_ingested:
+        return
+
     await message.add_reaction(PROCESSING_EMOJI)
     try:
         await _handle_screenshot(message)

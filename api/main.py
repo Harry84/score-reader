@@ -15,6 +15,8 @@ from api.dependencies import get_pg_conn
 from api.teams import router as teams_router
 from ingestion.extraction import extract_from_image_bytes
 from ingestion.workflow import (
+    DuplicateMatchError,
+    check_duplicate_image,
     edit_match_player,
     edit_match_winner,
     start_ingestion,
@@ -39,6 +41,13 @@ class EditWinnerRequest(BaseModel):
     winner: str
 
 
+def _duplicate_match_exception(e):
+    return HTTPException(
+        status_code=409,
+        detail={"message": str(e), "existing_match": e.existing_summary},
+    )
+
+
 @app.post("/matches")
 async def create_match(
     campaign_id: str = Form(...),
@@ -51,17 +60,27 @@ async def create_match(
 ):
     image_bytes = await image.read()
     suffix = os.path.splitext(image.filename or "")[1] or ".jpg"
+
+    try:
+        image_hash = check_duplicate_image(pg_conn, campaign_id, image_bytes)
+    except DuplicateMatchError as e:
+        raise _duplicate_match_exception(e)
+
     extracted_data = extract_from_image_bytes(image_bytes, suffix=suffix)
 
-    return start_ingestion(
-        pg_conn,
-        campaign_id=campaign_id,
-        turn_id=turn_id,
-        system_id=system_id,
-        match_type=match_type,
-        screenshot_ref=screenshot_ref,
-        extracted_data=extracted_data,
-    )
+    try:
+        return start_ingestion(
+            pg_conn,
+            campaign_id=campaign_id,
+            turn_id=turn_id,
+            system_id=system_id,
+            match_type=match_type,
+            screenshot_ref=screenshot_ref,
+            extracted_data=extracted_data,
+            image_hash=image_hash,
+        )
+    except DuplicateMatchError as e:
+        raise _duplicate_match_exception(e)
 
 
 @app.post("/matches/{pending_match_id}/answer")

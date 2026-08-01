@@ -1,7 +1,14 @@
 import pytest
 
 from db.migrate_runner import apply_schema
-from ingestion.workflow import edit_match_player, edit_match_winner, start_ingestion, submit_answer
+from ingestion.workflow import (
+    DuplicateMatchError,
+    check_duplicate_image,
+    edit_match_player,
+    edit_match_winner,
+    start_ingestion,
+    submit_answer,
+)
 
 
 def _make_ref_team(pg_conn, name):
@@ -154,6 +161,210 @@ def test_unambiguous_screenshot_is_persisted_immediately(pg_conn):
 
     assert float(imp_rating) == pytest.approx(1016.0)
     assert float(reb_rating) == pytest.approx(984.0)
+
+
+def _make_standard_roster(pg_conn):
+    imperial_team_id = _make_ref_team(pg_conn, "181st")
+    rebel_team_id = _make_ref_team(pg_conn, "Rogue Squadron")
+    _make_ref_player(pg_conn, "Vader", imperial_team_id, "Flex")
+    _make_ref_player(pg_conn, "Tarkin", imperial_team_id, "Support")
+    _make_ref_player(pg_conn, "Wedge", rebel_team_id, "Flex")
+    _make_ref_player(pg_conn, "Luke", rebel_team_id, "Support")
+    pg_conn.commit()
+
+
+def _standard_extracted_data():
+    return {
+        "match_result": "IMPERIAL VICTORY",
+        "teams": {
+            "imperial": {
+                "players": [
+                    _player("Vader", "Titan One", 1675, 4, 2, 1, 18, 30139),
+                    _player("Tarkin", "Titan Two", 900, 1, 3, 2, 5, 0),
+                ]
+            },
+            "rebel": {
+                "players": [
+                    _player("Wedge", "Vanguard One", 1200, 2, 4, 0, 10, 0),
+                    _player("Luke", "Vanguard Two", 1400, 3, 1, 2, 12, 0),
+                ]
+            },
+        },
+    }
+
+
+def test_reposting_identical_stats_in_same_campaign_raises_duplicate_error(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+    _make_standard_roster(pg_conn)
+    system_id = _get_system_id(pg_conn)
+
+    first = start_ingestion(
+        pg_conn,
+        campaign_id="campaign-1",
+        turn_id="turn-1",
+        system_id=system_id,
+        match_type="team",
+        screenshot_ref="discord://message/first",
+        extracted_data=_standard_extracted_data(),
+    )
+    first = _confirm_roster_sizes(pg_conn, first)
+    assert first["status"] == "persisted"
+
+    with pytest.raises(DuplicateMatchError) as exc_info:
+        start_ingestion(
+            pg_conn,
+            campaign_id="campaign-1",
+            turn_id="turn-2",
+            system_id=system_id,
+            match_type="team",
+            screenshot_ref="discord://message/second",
+            extracted_data=_standard_extracted_data(),
+        )
+    assert exc_info.value.existing_match_id == first["match_id"]
+    assert exc_info.value.existing_summary["match_id"] == first["match_id"]
+    assert exc_info.value.reason == "stats"
+
+    # The hard-stopped duplicate should leave no pending_matches row behind.
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "SELECT count(*) FROM pending_matches WHERE screenshot_ref = %s",
+            ("discord://message/second",),
+        )
+        assert cur.fetchone()[0] == 0
+
+
+def test_identical_stats_in_a_different_campaign_is_not_a_duplicate(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+    _make_standard_roster(pg_conn)
+    system_id = _get_system_id(pg_conn)
+
+    first = start_ingestion(
+        pg_conn,
+        campaign_id="campaign-1",
+        turn_id="turn-1",
+        system_id=system_id,
+        match_type="team",
+        screenshot_ref="discord://message/first",
+        extracted_data=_standard_extracted_data(),
+    )
+    first = _confirm_roster_sizes(pg_conn, first)
+    assert first["status"] == "persisted"
+
+    second = start_ingestion(
+        pg_conn,
+        campaign_id="campaign-2",
+        turn_id="turn-1",
+        system_id=system_id,
+        match_type="team",
+        screenshot_ref="discord://message/second",
+        extracted_data=_standard_extracted_data(),
+    )
+    second = _confirm_roster_sizes(pg_conn, second)
+    assert second["status"] == "persisted"
+    assert second["match_id"] != first["match_id"]
+
+
+def test_stats_differing_by_one_field_are_not_a_duplicate(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+    _make_standard_roster(pg_conn)
+    system_id = _get_system_id(pg_conn)
+
+    first = start_ingestion(
+        pg_conn,
+        campaign_id="campaign-1",
+        turn_id="turn-1",
+        system_id=system_id,
+        match_type="team",
+        screenshot_ref="discord://message/first",
+        extracted_data=_standard_extracted_data(),
+    )
+    first = _confirm_roster_sizes(pg_conn, first)
+    assert first["status"] == "persisted"
+
+    almost_identical = _standard_extracted_data()
+    almost_identical["teams"]["imperial"]["players"][0]["score"] = 1676
+
+    second = start_ingestion(
+        pg_conn,
+        campaign_id="campaign-1",
+        turn_id="turn-2",
+        system_id=system_id,
+        match_type="team",
+        screenshot_ref="discord://message/second",
+        extracted_data=almost_identical,
+    )
+    second = _confirm_roster_sizes(pg_conn, second)
+    assert second["status"] == "persisted"
+    assert second["match_id"] != first["match_id"]
+
+
+def test_check_duplicate_image_raises_for_same_bytes_already_persisted(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+    _make_standard_roster(pg_conn)
+    system_id = _get_system_id(pg_conn)
+
+    image_bytes = b"exact-same-screenshot-file"
+    image_hash = check_duplicate_image(pg_conn, "campaign-1", image_bytes)
+
+    first = start_ingestion(
+        pg_conn,
+        campaign_id="campaign-1",
+        turn_id="turn-1",
+        system_id=system_id,
+        match_type="team",
+        screenshot_ref="discord://message/first",
+        extracted_data=_standard_extracted_data(),
+        image_hash=image_hash,
+    )
+    first = _confirm_roster_sizes(pg_conn, first)
+    assert first["status"] == "persisted"
+
+    with pg_conn.cursor() as cur:
+        cur.execute("SELECT image_hash FROM matches WHERE id = %s", (first["match_id"],))
+        assert cur.fetchone()[0] == image_hash
+
+    with pytest.raises(DuplicateMatchError) as exc_info:
+        check_duplicate_image(pg_conn, "campaign-1", image_bytes)
+    assert exc_info.value.existing_match_id == first["match_id"]
+    assert exc_info.value.reason == "image"
+
+
+def test_check_duplicate_image_ignores_different_bytes(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+    _make_standard_roster(pg_conn)
+
+    image_hash = check_duplicate_image(pg_conn, "campaign-1", b"some-screenshot")
+    assert check_duplicate_image(pg_conn, "campaign-1", b"a-different-screenshot") != image_hash
+
+
+def test_check_duplicate_image_scoped_to_campaign(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+    _make_standard_roster(pg_conn)
+    system_id = _get_system_id(pg_conn)
+
+    image_bytes = b"exact-same-screenshot-file"
+    image_hash = check_duplicate_image(pg_conn, "campaign-1", image_bytes)
+
+    first = start_ingestion(
+        pg_conn,
+        campaign_id="campaign-1",
+        turn_id="turn-1",
+        system_id=system_id,
+        match_type="team",
+        screenshot_ref="discord://message/first",
+        extracted_data=_standard_extracted_data(),
+        image_hash=image_hash,
+    )
+    _confirm_roster_sizes(pg_conn, first)
+
+    # Same bytes, different campaign - not flagged.
+    check_duplicate_image(pg_conn, "campaign-2", image_bytes)
 
 
 def test_unrecognized_player_name_pauses_for_clarification(pg_conn):
