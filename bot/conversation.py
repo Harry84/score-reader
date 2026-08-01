@@ -27,23 +27,49 @@ def render_match_summary(result):
     return "\n".join(lines)
 
 
+# Reaction the bot pre-adds to a screenshot, for an admin to click to trigger
+# ingestion - see is_admin_reactor. INGESTED_EMOJI goes on the same message
+# once the resulting match actually persists (ADR-0001). PROCESSING_EMOJI is
+# added the instant an admin's trigger is accepted and removed once
+# ingestion finishes (success, a follow-up question, or an error) - since
+# extraction/persist takes a couple of seconds, this tells the admin their
+# reaction was seen rather than leaving them wondering if it registered.
+INGEST_TRIGGER_EMOJI = "\U0001F4E5"  # inbox tray emoji
+INGESTED_EMOJI = "✅"  # white check mark emoji
+PROCESSING_EMOJI = "⏳"  # hourglass (not done) emoji
+
+
+def is_admin_reactor(role_names, admin_role_name):
+    """role_names: the reacting Discord member's role names (any iterable of str)."""
+    return admin_role_name in role_names
+
+
+def render_screenshot_received():
+    return (
+        f"{INGEST_TRIGGER_EMOJI} Screenshot received - an admin can react with "
+        f"{INGEST_TRIGGER_EMOJI} above to process this match."
+    )
+
+
 def render_question(question):
     qtype = question["type"]
     if qtype == "player_match":
         lines = [f"Couldn't match player '{question['player_name']}'. Did you mean:"]
-        lines += [f"  {i}. {c['name']}" for i, c in enumerate(question["candidates"], start=1)]
+        lines += [f"  {i}\\. {c['name']}" for i, c in enumerate(question["candidates"], start=1)]
         if not question["candidates"]:
             lines.append("(no close matches - ask an admin to add this player, then re-post the screenshot)")
         else:
+            lines.append("  0\\. None of the above - it's a genuinely new player")
             lines.append("Reply with the number.")
         return "\n".join(lines)
 
     if qtype == "team_assignment":
         lines = [f"Which team is the {question['faction']} faction?"]
-        lines += [f"  {i}. {c['name']}" for i, c in enumerate(question["candidates"], start=1)]
+        lines += [f"  {i}\\. {c['name']}" for i, c in enumerate(question["candidates"], start=1)]
         if not question["candidates"]:
             lines.append("(no candidate teams found - ask an admin to resolve this manually)")
         else:
+            lines.append("  0\\. None of the above - ask an admin to resolve this manually")
             lines.append("Reply with the number.")
         return "\n".join(lines)
 
@@ -60,30 +86,63 @@ def render_question(question):
     raise ValueError(f"Don't know how to render a '{qtype}' question yet.")
 
 
+def render_rejection(question):
+    """Message shown after the user replies '0' to a player_match/
+    team_assignment question - explicitly rejecting every fuzzy-matched
+    candidate rather than picking a wrong one because it merely looked close."""
+    if question["type"] == "player_match":
+        return (
+            f"OK - treating '{question['player_name']}' as a genuinely new player. "
+            "Ask an admin to add them, then re-post the screenshot."
+        )
+    if question["type"] == "team_assignment":
+        return f"OK - ask an admin to resolve the {question['faction']} team assignment manually."
+    raise ValueError(f"Don't know how to render a rejection for a '{question['type']}' question.")
+
+
+def is_dead_end(question):
+    """True if this question has no candidate to reply with (e.g. an
+    unrecognized player name with no fuzzy matches). Those are informational
+    only - the fix happens out-of-band (admin adds the missing data, then
+    the screenshot gets re-posted as a new match), not via a reply here.
+    """
+    return question["type"] in ("player_match", "team_assignment") and not question["candidates"]
+
+
 def _parse_index(text, count):
+    """Parses a reply to a candidate-numbered question: 1..count picks a
+    candidate (returned as a 0-based index), 0 means "none of the above"
+    (returned as None). Only reachable when count >= 1 - is_dead_end() keeps
+    a zero-candidate question from ever being registered as answerable.
+    """
     if not text.isdigit():
-        raise ValueError(f"Reply with a number between 1 and {count}.")
+        raise ValueError(f"Reply with a number between 0 and {count}.")
     index = int(text)
-    if not (1 <= index <= count):
-        raise ValueError(f"Reply with a number between 1 and {count}.")
-    return index - 1
+    if not (0 <= index <= count):
+        raise ValueError(f"Reply with a number between 0 and {count}.")
+    return None if index == 0 else index - 1
 
 
 def parse_answer(question, text):
     """Turn a plain-text reply into the answer payload submit_answer() expects.
 
-    Raises ValueError with a user-facing message on unparseable input.
+    Returns None if the reply explicitly rejects every candidate ('0') - the
+    caller should treat that as a dead end (render_rejection) rather than
+    calling submit_answer. Raises ValueError with a user-facing message on
+    unparseable input.
     """
     qtype = question["type"]
     text = text.strip()
 
     if qtype == "player_match":
         candidates = question["candidates"]
-        return {"ref_player_id": candidates[_parse_index(text, len(candidates))]["id"]}
+        index = _parse_index(text, len(candidates))
+        return None if index is None else {"ref_player_id": candidates[index]["id"]}
 
     if qtype == "team_assignment":
         candidates = question["candidates"]
-        return {"ref_team_id": candidates[_parse_index(text, len(candidates))]["id"]}
+        index = _parse_index(text, len(candidates))
+        return None if index is None else {"ref_team_id": candidates[index]["id"]}
 
     if qtype == "roster_size":
         if text.lower() != "confirm":

@@ -11,6 +11,11 @@ BACKEND_URL = os.environ.get("BACKEND_URL", "http://localhost:8001")
 # proper faction-channel scoping (ADR-0001) is Phase 4 polish.
 BOT_CHANNEL_NAME = os.environ.get("BOT_CHANNEL_NAME", "ai-test")
 
+# ADR-0008: admin-ness lives entirely in Discord's own role system, checked by
+# the bot before it ever calls the backend - no backend-side admin concept.
+# Default matches the role name used as an example in that ADR.
+BOT_ADMIN_ROLE_NAME = os.environ.get("BOT_ADMIN_ROLE_NAME", "Bot Admin")
+
 # Match context the score bot would normally infer from which
 # command/channel triggered it, once the campaign project exists to supply
 # it (ADR-0007). Crude/hardcoded for this phase per ROADMAP Phase 3.

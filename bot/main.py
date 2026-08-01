@@ -11,12 +11,19 @@ import httpx
 
 from bot import backend_client, config
 from bot.conversation import (
+    INGEST_TRIGGER_EMOJI,
+    INGESTED_EMOJI,
+    PROCESSING_EMOJI,
+    is_admin_reactor,
+    is_dead_end,
     parse_answer,
     parse_edit_command,
     parse_edit_updates,
     render_help,
     render_match_summary,
     render_question,
+    render_rejection,
+    render_screenshot_received,
 )
 
 intents = discord.Intents.default()
@@ -25,10 +32,16 @@ intents.message_content = True
 client = discord.Client(intents=intents)
 http_client = None
 
-# channel_id -> {"pending_match_id": int, "question": dict}. MVP: one
-# in-flight question per channel, matching the roadmap's "next message's
-# content back as the answer" flow - no multi-user concurrency handling.
+# channel_id -> {"pending_match_id": int, "question": dict, "screenshot_message":
+# discord.Message}. MVP: one in-flight question per channel, matching the
+# roadmap's "next message's content back as the answer" flow - no multi-user
+# concurrency handling.
 _pending_questions = {}
+
+# message_id -> discord.Message, for screenshots posted but not yet approved by
+# an admin's INGEST_TRIGGER_EMOJI reaction. In-memory only, like
+# _pending_questions - lost on restart, same accepted MVP limitation.
+_pending_screenshots = {}
 
 
 def _is_bot_channel(message):
@@ -43,17 +56,21 @@ async def _reply_error(message, response):
     await message.reply(f"Error ({response.status_code}): {detail}")
 
 
-async def _handle_result(message, result):
+async def _handle_result(message, result, screenshot_message):
     status = result.get("status")
     if status == "persisted":
+        await screenshot_message.add_reaction(INGESTED_EMOJI)
         await message.reply(render_match_summary(result))
         return
     if status and status.startswith("awaiting_"):
-        _pending_questions[message.channel.id] = {
-            "pending_match_id": result["pending_match_id"],
-            "question": result["question"],
-        }
-        await message.reply(render_question(result["question"]))
+        question = result["question"]
+        if not is_dead_end(question):
+            _pending_questions[message.channel.id] = {
+                "pending_match_id": result["pending_match_id"],
+                "question": question,
+                "screenshot_message": screenshot_message,
+            }
+        await message.reply(render_question(question))
         return
     await message.reply(f"Unexpected response: {result}")
 
@@ -65,6 +82,11 @@ async def _handle_pending_answer(message, pending):
         await message.reply(str(e))
         return
 
+    if answer is None:
+        del _pending_questions[message.channel.id]
+        await message.reply(render_rejection(pending["question"]))
+        return
+
     response = await backend_client.submit_answer(
         http_client, pending["pending_match_id"], answer
     )
@@ -73,7 +95,7 @@ async def _handle_pending_answer(message, pending):
         return
 
     del _pending_questions[message.channel.id]
-    await _handle_result(message, response.json())
+    await _handle_result(message, response.json(), pending["screenshot_message"])
 
 
 async def _handle_screenshot(message):
@@ -92,7 +114,7 @@ async def _handle_screenshot(message):
     if response.status_code != 200:
         await _reply_error(message, response)
         return
-    await _handle_result(message, response.json())
+    await _handle_result(message, response.json(), screenshot_message=message)
 
 
 async def _handle_create_team(message, rest):
@@ -212,13 +234,37 @@ async def on_message(message):
         return
 
     if message.attachments:
-        await _handle_screenshot(message)
+        _pending_screenshots[message.id] = message
+        await message.reply(render_screenshot_received())
+        await message.add_reaction(INGEST_TRIGGER_EMOJI)
         return
 
     command, _, rest = message.content.partition(" ")
     handler = COMMANDS.get(command)
     if handler is not None:
         await handler(message, rest)
+
+
+@client.event
+async def on_raw_reaction_add(payload):
+    # payload.member is None for DM reactions, and is the bot itself right
+    # after add_reaction() above adds INGEST_TRIGGER_EMOJI - both ignored.
+    if payload.member is None or payload.member.bot:
+        return
+    if str(payload.emoji) != INGEST_TRIGGER_EMOJI:
+        return
+    message = _pending_screenshots.get(payload.message_id)
+    if message is None:
+        return
+    role_names = (role.name for role in payload.member.roles)
+    if not is_admin_reactor(role_names, config.BOT_ADMIN_ROLE_NAME):
+        return
+    del _pending_screenshots[payload.message_id]
+    await message.add_reaction(PROCESSING_EMOJI)
+    try:
+        await _handle_screenshot(message)
+    finally:
+        await message.remove_reaction(PROCESSING_EMOJI, client.user)
 
 
 def main():

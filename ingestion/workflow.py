@@ -40,23 +40,23 @@ def _player_hash(name):
 def _find_ref_player(pg_conn, name):
     with pg_conn.cursor() as cur:
         cur.execute(
-            "SELECT id, primary_team_id, primary_role FROM ref_players WHERE name = %s",
+            "SELECT id, name, primary_team_id, primary_role FROM ref_players WHERE name = %s",
             (name,),
         )
         row = cur.fetchone()
     if row is None:
         return None
-    return {"id": row[0], "primary_team_id": row[1], "primary_role": row[2]}
+    return {"id": row[0], "name": row[1], "primary_team_id": row[2], "primary_role": row[3]}
 
 
 def _get_ref_player_by_id(pg_conn, ref_player_id):
     with pg_conn.cursor() as cur:
         cur.execute(
-            "SELECT id, primary_team_id, primary_role FROM ref_players WHERE id = %s",
+            "SELECT id, name, primary_team_id, primary_role FROM ref_players WHERE id = %s",
             (ref_player_id,),
         )
         row = cur.fetchone()
-    return {"id": row[0], "primary_team_id": row[1], "primary_role": row[2]}
+    return {"id": row[0], "name": row[1], "primary_team_id": row[2], "primary_role": row[3]}
 
 
 def _find_player_candidates(pg_conn, name, limit=3, cutoff=0.6):
@@ -250,8 +250,13 @@ def _resolve_faction(
         # a legitimate persisted state (e.g. a genuine multi-role match),
         # fixable afterward via edit_match_player rather than blocking the
         # whole match on it.
+        #
+        # "player" is overwritten with the canonical ref_players name here -
+        # not just p["player"] as-typed/extracted - so a player_match override
+        # (an as-typed name that didn't match anyone) persists under their
+        # correct name instead of the screenshot's typo.
         resolved_players.append(
-            {**p, "ref_player": ref_player, "role": ref_player["primary_role"]}
+            {**p, "player": ref_player["name"], "ref_player": ref_player, "role": ref_player["primary_role"]}
         )
 
     if match_type != "team":

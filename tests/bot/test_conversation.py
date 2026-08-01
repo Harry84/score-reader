@@ -2,12 +2,17 @@ import pytest
 
 from bot.conversation import (
     EDITABLE_PLAYER_FIELDS,
+    INGEST_TRIGGER_EMOJI,
+    is_admin_reactor,
+    is_dead_end,
     parse_answer,
     parse_edit_command,
     parse_edit_updates,
     render_help,
     render_match_summary,
     render_question,
+    render_rejection,
+    render_screenshot_received,
 )
 
 
@@ -19,14 +24,105 @@ def test_render_player_match_question_lists_candidates():
     }
     text = render_question(question)
     assert "Wedg" in text
-    assert "1. Wedge" in text
-    assert "2. Wedgy" in text
+    # Periods after the number are backslash-escaped so Discord doesn't
+    # render these as a native ordered list and silently renumber them.
+    assert "1\\. Wedge" in text
+    assert "2\\. Wedgy" in text
+
+
+def test_is_admin_reactor_true_when_role_present():
+    assert is_admin_reactor(["Member", "Bot Admin"], "Bot Admin") is True
+
+
+def test_is_admin_reactor_false_when_role_absent():
+    assert is_admin_reactor(["Member"], "Bot Admin") is False
+
+
+def test_is_admin_reactor_false_for_no_roles():
+    assert is_admin_reactor([], "Bot Admin") is False
+
+
+def test_render_screenshot_received_mentions_trigger_emoji():
+    text = render_screenshot_received()
+    assert text.count(INGEST_TRIGGER_EMOJI) == 2
 
 
 def test_render_player_match_question_with_no_candidates():
     question = {"type": "player_match", "player_name": "Nobody", "candidates": []}
     text = render_question(question)
     assert "no close matches" in text
+
+
+def test_render_player_match_question_offers_none_of_the_above_when_candidates_present():
+    question = {
+        "type": "player_match",
+        "player_name": "Wedg",
+        "candidates": [{"id": 1, "name": "Wedge"}],
+    }
+    text = render_question(question)
+    assert "0\\. None of the above" in text
+
+
+def test_render_team_assignment_question_offers_none_of_the_above_when_candidates_present():
+    question = {
+        "type": "team_assignment",
+        "faction": "rebel",
+        "candidates": [{"id": 5, "name": "Rogue Squadron"}],
+    }
+    text = render_question(question)
+    assert "0\\. None of the above" in text
+
+
+def test_render_player_match_question_does_not_use_discord_autonumbered_list_syntax():
+    """Discord renders consecutive 'N. text' lines as a native ordered list
+    and renumbers them sequentially from the first item, ignoring the actual
+    digit in the source - so an unescaped '0. None of the above' line right
+    after '3. Candidate' would be displayed as '4.', not '0.'. The period
+    must be backslash-escaped to force literal rendering.
+    """
+    question = {
+        "type": "player_match",
+        "player_name": "Wedg",
+        "candidates": [
+            {"id": 1, "name": "Wedge"},
+            {"id": 2, "name": "Wedgy"},
+            {"id": 3, "name": "Wedgo"},
+        ],
+    }
+    text = render_question(question)
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped[:1].isdigit():
+            assert "\\." in stripped, f"unescaped numbered line would be renumbered by Discord: {line!r}"
+
+
+def test_is_dead_end_true_for_player_match_with_no_candidates():
+    question = {"type": "player_match", "player_name": "Nobody", "candidates": []}
+    assert is_dead_end(question) is True
+
+
+def test_is_dead_end_true_for_team_assignment_with_no_candidates():
+    question = {"type": "team_assignment", "faction": "rebel", "candidates": []}
+    assert is_dead_end(question) is True
+
+
+def test_is_dead_end_false_when_candidates_present():
+    question = {
+        "type": "player_match",
+        "player_name": "Wedg",
+        "candidates": [{"id": 1, "name": "Wedge"}],
+    }
+    assert is_dead_end(question) is False
+
+
+def test_is_dead_end_false_for_roster_size_and_missing_field():
+    assert is_dead_end({"type": "roster_size", "faction": "rebel", "count": 4, "expected": 5}) is False
+    assert (
+        is_dead_end(
+            {"type": "missing_field", "player_name": "Wedge", "field": "score", "numeric": True}
+        )
+        is False
+    )
 
 
 def test_render_team_assignment_question_lists_candidates():
@@ -37,7 +133,7 @@ def test_render_team_assignment_question_lists_candidates():
     }
     text = render_question(question)
     assert "rebel" in text
-    assert "1. Rogue Squadron" in text
+    assert "1\\. Rogue Squadron" in text
 
 
 def test_render_roster_size_question():
@@ -95,6 +191,37 @@ def test_parse_answer_rejects_out_of_range_number():
     }
     with pytest.raises(ValueError):
         parse_answer(question, "5")
+
+
+def test_parse_answer_player_match_zero_means_none_of_the_above():
+    question = {
+        "type": "player_match",
+        "player_name": "Wedg",
+        "candidates": [{"id": 1, "name": "Wedge"}, {"id": 2, "name": "Wedgy"}],
+    }
+    assert parse_answer(question, "0") is None
+
+
+def test_parse_answer_team_assignment_zero_means_none_of_the_above():
+    question = {
+        "type": "team_assignment",
+        "faction": "rebel",
+        "candidates": [{"id": 5, "name": "Rogue Squadron"}],
+    }
+    assert parse_answer(question, "0") is None
+
+
+def test_render_rejection_player_match():
+    question = {"type": "player_match", "player_name": "Jaxal", "candidates": []}
+    text = render_rejection(question)
+    assert "Jaxal" in text
+    assert "new player" in text
+
+
+def test_render_rejection_team_assignment():
+    question = {"type": "team_assignment", "faction": "rebel", "candidates": []}
+    text = render_rejection(question)
+    assert "rebel" in text
 
 
 def test_parse_answer_roster_size_accepts_confirm_case_insensitive():

@@ -6,7 +6,7 @@ This project uses AI vision capabilities to extract and analyze scores from Star
 
 The current, actively-developed system: a Discord bot posts a screenshot, a FastAPI backend extracts it via Claude vision and persists a Match to Postgres, recomputing ELO synchronously. See `ROADMAP.md` for the full implementation plan and status, and `docs/adr/` for the architectural decisions behind it. (Everything below "Project Structure" documents the older, pre-Discord CLI/SQLite workflow it's superseding - see the note there.)
 
-**Prerequisites:** Docker, Python 3.10+, a Discord bot application (token from the [Discord Developer Portal](https://discord.com/developers/applications), invited to your test server with the `bot` + `applications.commands` scopes, View Channels/Send Messages/Read Message History permissions, and the **Message Content** privileged intent enabled).
+**Prerequisites:** Docker, Python 3.10+, a Discord bot application (token from the [Discord Developer Portal](https://discord.com/developers/applications), invited to your test server with the `bot` scope, View Channels/Send Messages/Read Message History/Add Reactions permissions, and the **Message Content** privileged intent enabled) plus a "Bot Admin" Discord role assigned to whoever should approve screenshot ingestion. See "Discord setup reference" below for the full rationale per permission/intent/role.
 
 1.  **Start Postgres:**
     ```bash
@@ -48,6 +48,32 @@ Neither process auto-reloads on code changes — restart both after editing. Run
 python -m pytest tests/
 ```
 (`tests/test_stats_reader.py` and `tests/test_score_extractor.py` are pre-existing, unrelated failures — see `ROADMAP.md`'s loose-ends notes.)
+
+### Discord setup reference (dev portal & server)
+
+Worth having written down in full, since this is easy to forget between sessions and only needs doing once per bot/server.
+
+**1. Discord Developer Portal — bot application** (`discord.com/developers/applications` → your app → **Bot** tab)
+
+Privileged Gateway Intents:
+- ✅ **Message Content Intent** — required. The bot reads the literal text of every message it processes: `!` commands, typed answers to `awaiting_*` questions, `!edit` arguments (`discord.Intents.message_content` in `bot/main.py`).
+- ⬜ **Server Members Intent** — *not* currently required, even though the admin-reaction gate needs to read a reacting member's roles. `on_raw_reaction_add`'s `payload.member` (including `.roles`) is populated straight from Discord's gateway payload for guild reactions, independent of this intent (confirmed against discord.py's docs). If live testing shows role checks aren't working, this is the first thing to flip on.
+- ⬜ **Presence Intent** — not used anywhere in the bot.
+
+Bot permissions (set via the OAuth2 URL Generator when generating the server invite link, or later in Server Settings → Roles → the bot's own role):
+- **View Channel**, **Send Messages**, **Read Message History** — baseline, needed since Phase 3 for posting/reading in the bot channel.
+- **Add Reactions** — needed since the admin-reaction-gate feature: the bot reacts with 📥 (awaiting admin approval) and ✅ (ingested) on screenshot messages. Without this permission, `message.add_reaction()` raises a Discord permissions error the moment someone posts a screenshot.
+- OAuth2 scope: `bot` only — no slash commands yet, so `applications.commands` isn't needed (that's Phase 4).
+
+**2. Discord server — the "Bot Admin" role**
+
+- Create a role named exactly `Bot Admin` (or set `BOT_ADMIN_ROLE_NAME` in `.env` to match a different existing role name).
+- **No Discord permissions need to be granted to this role.** It's used purely as an identity tag: `bot/conversation.py`'s `is_admin_reactor` just checks whether the reacting member *has* a role with this name — not what that role is allowed to do in Discord. This is ADR-0008's design deliberately: admin-ness "lives in Discord's own role system... checked entirely by the score bot before it ever calls the backend" — the backend has no admin concept at all, and Discord's own permission bits are irrelevant to the check.
+- Assign this role to whichever Discord accounts should be able to approve screenshot ingestion (react with 📥 on a posted screenshot to trigger it). No role-hierarchy positioning relative to the bot's own role is needed, since the bot only *reads* role membership rather than assigning/managing roles on others.
+
+**3. Discord server — the bot's channel**
+
+- Whatever channel `BOT_CHANNEL_NAME` points at (default `ai-test`) needs the bot's View Channel/Send Messages/Read Message History/Add Reactions permissions to actually apply there — either inherited from the bot's server-wide role, or set as a channel-specific permission overwrite if you're scoping the bot more tightly.
 
 ## Project Structure
 

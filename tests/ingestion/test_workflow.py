@@ -269,12 +269,15 @@ def test_submit_answer_resolves_paused_player_and_persists_match(pg_conn):
 
     with pg_conn.cursor() as cur:
         cur.execute(
-            "SELECT player_name, faction, role, score, is_subbing FROM player_stats WHERE match_id = %s AND player_name = 'Vadar'",
+            "SELECT player_name, faction, role, score, is_subbing FROM player_stats WHERE match_id = %s AND player_name = 'Vader'",
             (match_id,),
         )
         row = cur.fetchone()
 
-    assert row == ("Vadar", "IMPERIAL", "Flex", 1675, False)
+    # Persisted under the canonical ref_players name ("Vader"), not the
+    # as-typed/extracted name ("Vadar") the player_match ambiguity resolved
+    # past - otherwise the typo would leak into the summary and !edit lookups.
+    assert row == ("Vader", "IMPERIAL", "Flex", 1675, False)
 
     with pg_conn.cursor() as cur:
         cur.execute(
