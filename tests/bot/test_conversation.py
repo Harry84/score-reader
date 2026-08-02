@@ -8,6 +8,7 @@ from bot.conversation import (
     parse_answer,
     parse_edit_command,
     parse_edit_updates,
+    render_admin_required,
     render_cancelled,
     render_error_detail,
     render_help,
@@ -451,3 +452,18 @@ def test_render_help_lists_all_commands_and_every_editable_field():
         assert command in text
     for field in EDITABLE_PLAYER_FIELDS:
         assert f"{field}=" in text
+
+
+def test_render_help_flags_admin_only_commands():
+    text = render_help()
+    create_team_line = next(line for line in text.splitlines() if "!create-team" in line)
+    set_captain_line = next(line for line in text.splitlines() if "!set-captain" in line)
+    add_roster_line = next(line for line in text.splitlines() if "!add-roster" in line)
+    assert "admin" in create_team_line.lower()
+    assert "admin" in set_captain_line.lower()
+    assert "admin" not in add_roster_line.lower()
+
+
+def test_render_admin_required_names_the_role():
+    text = render_admin_required("Bot Admin")
+    assert "Bot Admin" in text

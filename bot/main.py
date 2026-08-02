@@ -20,6 +20,7 @@ from bot.conversation import (
     parse_answer,
     parse_edit_command,
     parse_edit_updates,
+    render_admin_required,
     render_cancelled,
     render_error_detail,
     render_help,
@@ -49,6 +50,11 @@ _pending_screenshots = {}
 
 def _is_bot_channel(message):
     return getattr(message.channel, "name", None) == config.BOT_CHANNEL_NAME
+
+
+def _is_admin(message):
+    role_names = (role.name for role in getattr(message.author, "roles", []))
+    return is_admin_reactor(role_names, config.BOT_ADMIN_ROLE_NAME)
 
 
 async def _reply_error(message, response):
@@ -131,6 +137,9 @@ async def _handle_screenshot(message):
 
 
 async def _handle_create_team(message, rest):
+    if not _is_admin(message):
+        await message.reply(render_admin_required(config.BOT_ADMIN_ROLE_NAME))
+        return
     name = rest.strip()
     if not name:
         await message.reply("Usage: `!create-team <name>`")
@@ -144,6 +153,9 @@ async def _handle_create_team(message, rest):
 
 
 async def _handle_set_captain(message, rest):
+    if not _is_admin(message):
+        await message.reply(render_admin_required(config.BOT_ADMIN_ROLE_NAME))
+        return
     parts = rest.split(maxsplit=1)
     if len(parts) != 2 or not parts[0].isdigit() or not message.mentions:
         await message.reply("Usage: `!set-captain <team_id> @discord_user`")

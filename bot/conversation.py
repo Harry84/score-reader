@@ -51,8 +51,14 @@ CANCELLED_EMOJI = "❌"  # cross mark emoji
 
 
 def is_admin_reactor(role_names, admin_role_name):
-    """role_names: the reacting Discord member's role names (any iterable of str)."""
+    """role_names: a Discord member's role names (any iterable of str) - the
+    member reacting to a screenshot (main.py: on_raw_reaction_add) or the
+    author of an admin-only command (main.py: _is_admin)."""
     return admin_role_name in role_names
+
+
+def render_admin_required(admin_role_name):
+    return f"Only a Discord user with the '{admin_role_name}' role can do that."
 
 
 def render_screenshot_received():
@@ -256,9 +262,9 @@ def parse_edit_updates(tokens):
 def render_help():
     lines = [
         "**Commands**",
-        "`!create-team <name>` - create or find a team by name",
-        "`!set-captain <team_id> @discord_user` - assign a team's captain",
-        "`!add-roster <team_id> <player name>` - attach an existing player to a team's roster",
+        "`!create-team <name>` - create or find a team by name (Bot Admin only)",
+        "`!set-captain <team_id> @discord_user` - assign a team's captain (Bot Admin only)",
+        "`!add-roster <team_id> <player name>` - attach an existing player to a team's roster (that team's captain only)",
         "`!edit <match_id> <player name> <field>=<value> [...]` - correct a persisted match's stats",
         "`!edit-winner <match_id> <IMPERIAL|REBEL>` - correct a persisted match's winner",
         "",
