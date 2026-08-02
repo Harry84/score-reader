@@ -20,6 +20,10 @@ async def find_players(client, name):
     return await client.get("/players", params={"name": name})
 
 
+async def create_player(client, name):
+    return await client.post("/players", json={"name": name})
+
+
 async def attach_player_to_roster(client, team_id, requesting_discord_id, ref_player_id):
     return await client.post(
         f"/teams/{team_id}/roster",

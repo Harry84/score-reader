@@ -448,7 +448,14 @@ def test_parse_edit_updates_rejects_empty_tokens():
 
 def test_render_help_lists_all_commands_and_every_editable_field():
     text = render_help()
-    for command in ("!create-team", "!set-captain", "!add-roster", "!edit", "!edit-winner"):
+    for command in (
+        "!create-team",
+        "!create-player",
+        "!set-captain",
+        "!add-roster",
+        "!edit",
+        "!edit-winner",
+    ):
         assert command in text
     for field in EDITABLE_PLAYER_FIELDS:
         assert f"{field}=" in text
@@ -457,9 +464,11 @@ def test_render_help_lists_all_commands_and_every_editable_field():
 def test_render_help_flags_admin_only_commands():
     text = render_help()
     create_team_line = next(line for line in text.splitlines() if "!create-team" in line)
+    create_player_line = next(line for line in text.splitlines() if "!create-player" in line)
     set_captain_line = next(line for line in text.splitlines() if "!set-captain" in line)
     add_roster_line = next(line for line in text.splitlines() if "!add-roster" in line)
     assert "admin" in create_team_line.lower()
+    assert "admin" in create_player_line.lower()
     assert "admin" in set_captain_line.lower()
     assert "admin" not in add_roster_line.lower()
 

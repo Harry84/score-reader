@@ -152,6 +152,25 @@ async def _handle_create_team(message, rest):
     await message.reply(f"Team '{team['name']}' ready (id `{team['id']}`).")
 
 
+async def _handle_create_player(message, rest):
+    if not _is_admin(message):
+        await message.reply(render_admin_required(config.BOT_ADMIN_ROLE_NAME))
+        return
+    name = rest.strip()
+    if not name:
+        await message.reply("Usage: `!create-player <name>`")
+        return
+    response = await backend_client.create_player(http_client, name)
+    if response.status_code != 200:
+        await _reply_error(message, response)
+        return
+    player = response.json()
+    await message.reply(
+        f"Player '{player['name']}' created (id `{player['id']}`). "
+        "A captain can now `!add-roster` them to a team."
+    )
+
+
 async def _handle_set_captain(message, rest):
     if not _is_admin(message):
         await message.reply(render_admin_required(config.BOT_ADMIN_ROLE_NAME))
@@ -232,6 +251,7 @@ async def _handle_help(message, rest):
 
 COMMANDS = {
     "!create-team": _handle_create_team,
+    "!create-player": _handle_create_player,
     "!set-captain": _handle_set_captain,
     "!add-roster": _handle_add_roster,
     "!edit": _handle_edit_player,

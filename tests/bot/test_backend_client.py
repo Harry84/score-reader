@@ -51,6 +51,25 @@ def test_find_players_sends_name_query_param():
     assert response.json() == [{"id": 1, "name": "Wedge"}]
 
 
+def test_create_player_posts_name():
+    captured = {}
+
+    def handler(request):
+        captured["method"] = request.method
+        captured["url"] = request.url.path
+        captured["json"] = json.loads(request.content)
+        return httpx.Response(200, json={"id": 9, "name": "Wedge"})
+
+    async def run():
+        async with _client(handler) as client:
+            return await backend_client.create_player(client, "Wedge")
+
+    response = _run(run())
+
+    assert response.status_code == 200
+    assert captured == {"method": "POST", "url": "/players", "json": {"name": "Wedge"}}
+
+
 def test_attach_player_to_roster_posts_requesting_discord_id_and_player_id():
     captured = {}
 
