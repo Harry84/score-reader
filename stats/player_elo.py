@@ -165,3 +165,32 @@ def recompute_player_elo(pg_conn, campaign_id, match_type, starting_elo=STARTING
     pg_conn.commit()
 
     return ladders
+
+
+def get_player_elo_ladder(pg_conn, campaign_id, match_type, role=GENERAL):
+    """ROADMAP Phase 5: the campaign project's player ELO ladder read.
+    role defaults to the base "general" ladder; pass one of ROLES for a
+    role-specific sub-ladder."""
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT p.id, p.name, e.rating, e.matches_played, e.matches_won, e.matches_lost, e.rank
+            FROM player_elo_ratings e JOIN players p ON p.id = e.player_id
+            WHERE e.campaign_id = %s AND e.match_type = %s AND e.role = %s
+            ORDER BY e.rank
+            """,
+            (campaign_id, match_type, role),
+        )
+        rows = cur.fetchall()
+    return [
+        {
+            "player_id": r[0],
+            "name": r[1],
+            "rating": float(r[2]),
+            "matches_played": r[3],
+            "matches_won": r[4],
+            "matches_lost": r[5],
+            "rank": r[6],
+        }
+        for r in rows
+    ]

@@ -12,6 +12,7 @@ from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from api.dependencies import get_pg_conn
+from api.reads import router as reads_router
 from api.teams import router as teams_router
 from ingestion.extraction import extract_from_image_bytes
 from ingestion.workflow import (
@@ -28,6 +29,7 @@ load_dotenv()
 
 app = FastAPI(title="Squadrons Backend")
 app.include_router(teams_router)
+app.include_router(reads_router)
 
 
 class AnswerRequest(BaseModel):

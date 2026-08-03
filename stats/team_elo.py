@@ -125,3 +125,30 @@ def recompute_team_elo(pg_conn, campaign_id, starting_elo=STARTING_ELO, k_factor
                 history_row + (campaign_id,),
             )
     pg_conn.commit()
+
+
+def get_team_elo_ladder(pg_conn, campaign_id):
+    """ROADMAP Phase 5: the campaign project's team ELO ladder read."""
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT t.id, t.name, e.rating, e.matches_played, e.matches_won, e.matches_lost, e.rank
+            FROM team_elo_ratings e JOIN teams t ON t.id = e.team_id
+            WHERE e.campaign_id = %s
+            ORDER BY e.rank
+            """,
+            (campaign_id,),
+        )
+        rows = cur.fetchall()
+    return [
+        {
+            "team_id": r[0],
+            "name": r[1],
+            "rating": float(r[2]),
+            "matches_played": r[3],
+            "matches_won": r[4],
+            "matches_lost": r[5],
+            "rank": r[6],
+        }
+        for r in rows
+    ]

@@ -72,6 +72,21 @@ def get_team(pg_conn, team_id):
     return {"id": row[0], "name": row[1], "captain_discord_id": row[2]}
 
 
+def get_team_roster(pg_conn, team_id):
+    """List a team's roster (ROADMAP Phase 5 - campaign project read).
+
+    Raises ValueError if the team doesn't exist, mirroring get_team.
+    """
+    get_team(pg_conn, team_id)
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "SELECT id, name FROM ref_players WHERE primary_team_id = %s ORDER BY name",
+            (team_id,),
+        )
+        rows = cur.fetchall()
+    return [{"id": r[0], "name": r[1]} for r in rows]
+
+
 def find_players_by_name(pg_conn, name):
     """Case-insensitive partial-name search over ref_players (open lookup).
 

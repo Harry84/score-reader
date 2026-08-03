@@ -1,7 +1,7 @@
 from db.migrate_runner import apply_schema
 
 
-def test_create_team_then_list_and_get(pg_conn, client):
+def test_create_team_then_list_and_get(pg_conn, client, campaign_headers):
     apply_schema(pg_conn)
     pg_conn.commit()
 
@@ -10,19 +10,27 @@ def test_create_team_then_list_and_get(pg_conn, client):
     team = response.json()
     assert team["name"] == "Rogue Squadron"
 
-    listed = client.get("/teams").json()
+    listed = client.get("/teams", headers=campaign_headers).json()
     assert [t["name"] for t in listed] == ["Rogue Squadron"]
 
-    fetched = client.get(f"/teams/{team['id']}").json()
+    fetched = client.get(f"/teams/{team['id']}", headers=campaign_headers).json()
     assert fetched["id"] == team["id"]
 
 
-def test_get_nonexistent_team_returns_404(pg_conn, client):
+def test_get_nonexistent_team_returns_404(pg_conn, client, campaign_headers):
     apply_schema(pg_conn)
     pg_conn.commit()
 
-    response = client.get("/teams/999999")
+    response = client.get("/teams/999999", headers=campaign_headers)
     assert response.status_code == 404
+
+
+def test_get_teams_requires_campaign_api_key(pg_conn, client):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    assert client.get("/teams").status_code == 401
+    assert client.get("/teams", headers={"X-API-Key": "wrong"}).status_code == 401
 
 
 def test_create_player_then_captain_attaches_to_roster(pg_conn, client):

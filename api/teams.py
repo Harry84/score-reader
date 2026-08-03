@@ -4,11 +4,17 @@ POST /teams, POST /players, POST /teams/{id}/captain are Admin-only,
 trusted implicitly from the caller - the score bot only exposes these
 commands to Discord admins. POST /teams/{id}/roster is Captain-only and
 independently verified against ref_teams.captain_discord_id.
+
+GET /teams and GET /teams/{id} are gated behind require_campaign_api_key
+(ROADMAP Phase 5) - the campaign project's narrative flow reads Team data,
+never writes it (ADR-0001). The score bot never calls either route today,
+so this gate has no effect on existing bot-facing traffic.
 """
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from api.auth import require_campaign_api_key
 from api.dependencies import get_pg_conn
 from teams.onboarding import (
     attach_player_to_roster,
@@ -50,12 +56,12 @@ def create_team_route(body: CreateTeamRequest, pg_conn=Depends(get_pg_conn)):
     return create_team(pg_conn, body.name, alias=body.alias)
 
 
-@router.get("/teams")
+@router.get("/teams", dependencies=[Depends(require_campaign_api_key)])
 def list_teams_route(pg_conn=Depends(get_pg_conn)):
     return list_teams(pg_conn)
 
 
-@router.get("/teams/{team_id}")
+@router.get("/teams/{team_id}", dependencies=[Depends(require_campaign_api_key)])
 def get_team_route(team_id: int, pg_conn=Depends(get_pg_conn)):
     try:
         return get_team(pg_conn, team_id)

@@ -22,6 +22,11 @@ does: role only affects which role-ELO ladder a player lands on, not who
 played or who won, so it's not worth blocking persist over. It's left
 NULL (a legitimate "no role this match" state, e.g. genuine multi-roling)
 and can be set/cleared afterward via edit_match_player.
+
+_persist is the single choke point where a Match first becomes persisted
+(the only call site in the codebase) - ROADMAP Phase 5's campaign-project
+webhook (ingestion/webhook.py) fires from here, after ELO recompute so the
+notified summary reflects committed ELO, not the initial write.
 """
 
 import difflib
@@ -29,6 +34,7 @@ import hashlib
 import json
 from collections import Counter
 
+from ingestion.webhook import send_match_persisted
 from stats.player_elo import recompute_player_elo
 from stats.team_elo import recompute_team_elo
 
@@ -533,6 +539,7 @@ def _persist(pg_conn, pending_match_id, pending_match, resolved):
         recompute_player_elo(pg_conn, pending_match["campaign_id"], match_type)
 
     summary = _build_match_summary(pg_conn, match_id)
+    send_match_persisted(summary)
     summary["pending_match_id"] = pending_match_id
     return summary
 
@@ -541,10 +548,19 @@ def _build_match_summary(pg_conn, match_id):
     """The persisted-match shape returned by _persist and by the edit_*
     functions below - always read back from the DB rather than assembled
     from in-memory state, so an edited match's summary reflects what's
-    actually stored."""
+    actually stored.
+
+    turn_id/system_id/campaign_id/match_type were added for ROADMAP Phase 5
+    (the campaign-project webhook/read API needs them) - bot/conversation.py:
+    render_match_summary only reads match_id/winner/players and ignores the
+    rest, so widening this dict is safe for that existing caller.
+    """
     with pg_conn.cursor() as cur:
-        cur.execute("SELECT winner FROM matches WHERE id = %s", (match_id,))
-        (winner,) = cur.fetchone()
+        cur.execute(
+            "SELECT winner, turn_id, system_id, campaign_id, match_type FROM matches WHERE id = %s",
+            (match_id,),
+        )
+        winner, turn_id, system_id, campaign_id, match_type = cur.fetchone()
         cur.execute(
             """
             SELECT faction, player_name, role, score, kills, deaths, assists, ai_kills, cap_ship_damage
@@ -569,7 +585,38 @@ def _build_match_summary(pg_conn, match_id):
             }
         )
 
-    return {"status": "persisted", "match_id": match_id, "winner": winner, "players": players}
+    return {
+        "status": "persisted",
+        "match_id": match_id,
+        "winner": winner,
+        "turn_id": turn_id,
+        "system_id": system_id,
+        "campaign_id": campaign_id,
+        "match_type": match_type,
+        "players": players,
+    }
+
+
+def get_latest_match(pg_conn, campaign_id, turn_id, system_id):
+    """ROADMAP Phase 5: the campaign project's "what happened in this
+    system this turn" read. campaign_id is required alongside turn_id even
+    though ROADMAP's Phase 5 bullet only names (turn_id, system_id) -
+    CONTEXT.md is explicit that turn_id values can repeat across campaigns,
+    so dropping campaign_id here risks returning a match from the wrong
+    campaign. Returns None if no persisted match matches."""
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id FROM matches
+            WHERE campaign_id = %s AND turn_id = %s AND system_id = %s
+            ORDER BY match_date DESC, id DESC LIMIT 1
+            """,
+            (campaign_id, turn_id, system_id),
+        )
+        row = cur.fetchone()
+    if row is None:
+        return None
+    return _build_match_summary(pg_conn, row[0])
 
 
 def _recompute_for_match(pg_conn, match_id):

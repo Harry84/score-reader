@@ -55,9 +55,12 @@ def _confirm_roster_sizes(pg_conn, result):
     return result
 
 
-def test_unambiguous_screenshot_is_persisted_immediately(pg_conn):
+def test_unambiguous_screenshot_is_persisted_immediately(pg_conn, monkeypatch):
     apply_schema(pg_conn)
     pg_conn.commit()
+
+    webhook_calls = []
+    monkeypatch.setattr("ingestion.workflow.send_match_persisted", webhook_calls.append)
 
     imperial_team_id = _make_ref_team(pg_conn, "181st")
     rebel_team_id = _make_ref_team(pg_conn, "Rogue Squadron")
@@ -106,6 +109,18 @@ def test_unambiguous_screenshot_is_persisted_immediately(pg_conn):
     assert result["players"]["imperial"][0]["role"] == "Flex"
     assert result["players"]["imperial"][0]["score"] == 1675
     assert [p["player"] for p in result["players"]["rebel"]] == ["Wedge", "Luke"]
+
+    # ROADMAP Phase 5: _build_match_summary was widened for the
+    # campaign-project webhook/read API - confirm the extra fields round-trip.
+    assert result["turn_id"] == "turn-1"
+    assert result["system_id"] == system_id
+    assert result["campaign_id"] == "campaign-1"
+    assert result["match_type"] == "team"
+
+    # _persist calls send_match_persisted exactly once, after ELO recompute.
+    assert len(webhook_calls) == 1
+    assert webhook_calls[0]["match_id"] == match_id
+    assert webhook_calls[0]["winner"] == "IMPERIAL"
 
     with pg_conn.cursor() as cur:
         cur.execute(
