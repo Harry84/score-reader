@@ -117,14 +117,56 @@ async def _handle_pending_answer(message, pending):
     await _handle_result(message, response.json(), pending["screenshot_message"])
 
 
+async def _get_live_battle_context():
+    """Ask the campaign project's read-only pending_battles endpoint which
+    real campaign/turn/system a report should be tagged with, instead of
+    config.DEFAULT_*. Returns (campaign_id, turn_id, system_id, note) --
+    note is a short string worth telling the reporter (which system it
+    picked, or why it fell back), or None if nothing's worth mentioning.
+    Falls back to config.DEFAULT_* -- and says so -- whenever the campaign
+    server is unreachable, nothing is currently pending, or
+    config.BOT_USE_TEST_CAMPAIGN forces it. Never raises: an unreachable
+    campaign server degrades to the old hardcoded behavior rather than
+    blocking screenshot reporting entirely."""
+    if config.BOT_USE_TEST_CAMPAIGN:
+        return (config.DEFAULT_CAMPAIGN_ID, config.DEFAULT_TURN_ID,
+                config.DEFAULT_SYSTEM_ID, None)
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            resp = await client.get(f"{config.CAMPAIGN_API_URL}/api/pending_battles.json")
+        resp.raise_for_status()
+        pending = resp.json().get("pending_battles", [])
+    except (httpx.HTTPError, ValueError):
+        return (config.DEFAULT_CAMPAIGN_ID, config.DEFAULT_TURN_ID, config.DEFAULT_SYSTEM_ID,
+                "couldn't reach the live campaign -- tagged as the test-campaign default instead.")
+    if not pending:
+        return (config.DEFAULT_CAMPAIGN_ID, config.DEFAULT_TURN_ID, config.DEFAULT_SYSTEM_ID,
+                "nothing's currently pending in the live campaign -- tagged as the test-campaign default instead.")
+    # MVP: several systems can be contested in the same window at once
+    # (see SQUADRONS-CAMPAIGN-DESIGN.md). Picking the lowest system_id
+    # deterministically rather than asking which one is a real
+    # simplification -- fine while a window is rarely more than one or two
+    # contests deep, worth revisiting (a disambiguation question, same
+    # shape as the existing pending-question flow) if that stops being true.
+    chosen = min(pending, key=lambda p: p["system_id"])
+    note = None
+    if len(pending) > 1:
+        others = ", ".join(p["system"] for p in pending if p is not chosen)
+        note = f"multiple systems pending ({chosen['system']}, {others}) -- tagged to {chosen['system']}, first by id."
+    return (chosen["campaign_id"], chosen["turn_id"], chosen["system_id"], note)
+
+
 async def _handle_screenshot(message):
     attachment = message.attachments[0]
     image_bytes = await attachment.read()
+    campaign_id, turn_id, system_id, note = await _get_live_battle_context()
+    if note:
+        await message.reply(note)
     response = await backend_client.create_match(
         http_client,
-        campaign_id=config.DEFAULT_CAMPAIGN_ID,
-        turn_id=config.DEFAULT_TURN_ID,
-        system_id=config.DEFAULT_SYSTEM_ID,
+        campaign_id=campaign_id,
+        turn_id=turn_id,
+        system_id=system_id,
         match_type=config.DEFAULT_MATCH_TYPE,
         screenshot_ref=f"discord://message/{message.id}",
         image_bytes=image_bytes,
