@@ -8,7 +8,7 @@ load_dotenv()
 
 TEST_DATABASE_URL = os.environ.get(
     "TEST_DATABASE_URL",
-    "postgresql://squadrons:squadrons@localhost:5433/squadrons_test",
+    "postgresql://squadrons:squadrons@localhost:55432/squadrons_test",
 )
 
 

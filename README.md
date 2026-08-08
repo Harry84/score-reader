@@ -20,7 +20,7 @@ The current, actively-developed system: a Discord bot posts a screenshot, a Fast
 
 3.  **Configure `.env`** in the project root:
     ```
-    DATABASE_URL=postgresql://squadrons:squadrons@localhost:5433/squadrons
+    DATABASE_URL=postgresql://squadrons:squadrons@localhost:55432/squadrons
     ANTHROPIC_API_KEY=your-claude-api-key
     DISCORD_BOT_TOKEN=your-bot-token
     ```
