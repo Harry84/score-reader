@@ -47,6 +47,22 @@ _pending_questions = {}
 # _pending_questions - lost on restart, same accepted MVP limitation.
 _pending_screenshots = {}
 
+# channel_id -> {"match_id", "queue": [{"player", "role"}, ...],
+# "screenshot_message"}. One player prompted at a time -- same "next
+# message is the answer" shape as _pending_questions, kept separate since
+# it starts only once a match has already reached "persisted" (the two
+# never overlap for a given channel). In-memory only, lost on restart,
+# same as the dicts above -- an interrupted review just leaves whatever
+# roles were already confirmed; !edit still works standalone for the rest.
+_role_review = {}
+
+# channel_id -> {"campaign_id", "turn_id", "system_id", "system"}. Set by
+# !report <system>, consumed (and cleared) by the next screenshot approved
+# in that channel -- "ask what's pending, then say which one you're posting"
+# instead of the bot guessing after the fact. In-memory only, lost on
+# restart, same as the two dicts above.
+_selected_battle = {}
+
 
 def _is_bot_channel(message):
     return getattr(message.channel, "name", None) == config.BOT_CHANNEL_NAME
@@ -70,6 +86,7 @@ async def _handle_result(message, result, screenshot_message):
     if status == "persisted":
         await screenshot_message.add_reaction(INGESTED_EMOJI)
         await message.reply(render_match_summary(result))
+        await _start_role_review(message, result)
         return
     if status and status.startswith("awaiting_"):
         question = result["question"]
@@ -82,6 +99,73 @@ async def _handle_result(message, result, screenshot_message):
         await message.reply(render_question(question))
         return
     await message.reply(f"Unexpected response: {result}")
+
+
+ROLE_REVIEW_OPTIONS = ("Farmer", "Flex", "Support")
+
+
+async def _start_role_review(message, result):
+    """Right after a match persists: walk every player one at a time,
+    offering to set THIS match's role, same shape as the old stats_reader
+    CLI's "Enter new role for this match ... or press Enter to keep
+    primary role" prompt -- brought into Discord since that per-match
+    override step never survived the move off the old CLI. Never infers
+    anything itself: shows exactly what's already on record (the player's
+    primary_role, verbatim -- 'not set' if it's null) and only changes
+    anything if a human actually types a role."""
+    all_players = result["players"].get("rebel", []) + result["players"].get("imperial", [])
+    if not all_players:
+        return
+    _role_review[message.channel.id] = {
+        "match_id": result["match_id"],
+        "queue": list(all_players),
+    }
+    await _prompt_next_role_review(message.channel)
+
+
+async def _prompt_next_role_review(channel):
+    review = _role_review.get(channel.id)
+    if review is None:
+        return
+    if not review["queue"]:
+        del _role_review[channel.id]
+        await channel.send("Role review complete.")
+        return
+    player = review["queue"][0]
+    current = player.get("role") or "not set"
+    await channel.send(
+        f"Role for **{player['player']}** this match -- currently *{current}*. "
+        f"Type `{'`/`'.join(ROLE_REVIEW_OPTIONS)}` to set it, `keep` to leave it, "
+        f"or `done` to stop reviewing."
+    )
+
+
+async def _handle_role_review_answer(message, review):
+    text = message.content.strip()
+    lowered = text.lower()
+    if lowered == "done":
+        del _role_review[message.channel.id]
+        await message.reply("Role review stopped -- anything not yet reviewed keeps its current role.")
+        return
+    if lowered == "keep":
+        review["queue"].pop(0)
+        await _prompt_next_role_review(message.channel)
+        return
+
+    matched = next((r for r in ROLE_REVIEW_OPTIONS if r.lower() == lowered), None)
+    if matched is None:
+        await message.reply(f"'{text}' isn't `{'`/`'.join(ROLE_REVIEW_OPTIONS)}`, `keep`, or `done`. Try again.")
+        return
+
+    player = review["queue"][0]
+    response = await backend_client.edit_match_player(
+        http_client, review["match_id"], player["player"], {"role": matched})
+    if response.status_code != 200:
+        await _reply_error(message, response)
+        return
+    review["queue"].pop(0)
+    await message.reply(f"{player['player']} set to {matched} for this match.")
+    await _prompt_next_role_review(message.channel)
 
 
 async def _handle_pending_answer(message, pending):
@@ -117,49 +201,130 @@ async def _handle_pending_answer(message, pending):
     await _handle_result(message, response.json(), pending["screenshot_message"])
 
 
-async def _get_live_battle_context():
-    """Ask the campaign project's read-only pending_battles endpoint which
-    real campaign/turn/system a report should be tagged with, instead of
-    config.DEFAULT_*. Returns (campaign_id, turn_id, system_id, note) --
-    note is a short string worth telling the reporter (which system it
-    picked, or why it fell back), or None if nothing's worth mentioning.
-    Falls back to config.DEFAULT_* -- and says so -- whenever the campaign
-    server is unreachable, nothing is currently pending, or
-    config.BOT_USE_TEST_CAMPAIGN forces it. Never raises: an unreachable
-    campaign server degrades to the old hardcoded behavior rather than
-    blocking screenshot reporting entirely."""
+async def _fetch_pending_battles():
+    """Raw GET against the campaign project's read-only pending_battles
+    endpoint. Raises httpx.HTTPError/ValueError on any failure -- callers
+    decide how to degrade, since !pending (report the failure) and
+    _get_live_battle_context() (silently fall back) want different things
+    from the same failure."""
+    async with httpx.AsyncClient(timeout=5) as client:
+        resp = await client.get(f"{config.CAMPAIGN_API_URL}/api/pending_battles.json")
+    resp.raise_for_status()
+    return resp.json().get("pending_battles", [])
+
+
+async def _handle_pending(message, rest):
+    """!pending -- list what the live campaign is actually waiting on right
+    now, so a reporter can !report a specific one before posting their
+    screenshot instead of the bot guessing after the fact."""
+    if config.BOT_USE_TEST_CAMPAIGN:
+        await message.reply("Bot is in --test-campaign mode -- every report tags to the "
+                            f"test-campaign default (system_id={config.DEFAULT_SYSTEM_ID}), "
+                            "live campaign pending state isn't consulted.")
+        return
+    try:
+        pending = await _fetch_pending_battles()
+    except (httpx.HTTPError, ValueError):
+        await message.reply(f"Couldn't reach the live campaign at {config.CAMPAIGN_API_URL}.")
+        return
+    if not pending:
+        await message.reply("Nothing's currently pending in the live campaign.")
+        return
+    lines = [f"- **{p['system']}** (`{p['turn_id']}`)" for p in pending]
+    await message.reply("Pending real match reports:\n" + "\n".join(lines)
+                        + "\n\nUse `!report <system name>` to choose one before posting your screenshot.")
+
+
+async def _handle_report(message, rest):
+    """!report <system name> -- selects which pending battle the *next*
+    screenshot approved in this channel should be tagged to (consumed and
+    cleared the moment that screenshot is processed -- see
+    _get_live_battle_context()). Matched case-insensitively, substring OK
+    ('yavin' matches 'Yavin Prime') since these are always short, distinct
+    system names."""
+    name = rest.strip()
+    if not name:
+        await message.reply("Usage: `!report <system name>` -- see `!pending` for what's waiting.")
+        return
+    try:
+        pending = await _fetch_pending_battles()
+    except (httpx.HTTPError, ValueError):
+        await message.reply(f"Couldn't reach the live campaign at {config.CAMPAIGN_API_URL}.")
+        return
+    matches = [p for p in pending if name.lower() in p["system"].lower()]
+    if not matches:
+        systems = ", ".join(p["system"] for p in pending) or "(nothing pending)"
+        await message.reply(f"No pending battle matches '{name}'. Pending: {systems}")
+        return
+    if len(matches) > 1:
+        names = ", ".join(p["system"] for p in matches)
+        await message.reply(f"'{name}' matches more than one: {names}. Be more specific.")
+        return
+    chosen = matches[0]
+    _selected_battle[message.channel.id] = chosen
+    await message.reply(f"Locked in -- your next screenshot in this channel reports "
+                        f"**{chosen['system']}** (`{chosen['turn_id']}`).")
+
+
+class AmbiguousBattleError(Exception):
+    """Several systems are pending and no !report selection was made --
+    _handle_screenshot() must NOT guess (silently mistagging a real report
+    as the test-campaign default is worse than just asking first), so this
+    aborts ingestion entirely rather than falling back like every other
+    degraded case below."""
+    def __init__(self, systems):
+        self.systems = systems
+
+
+async def _get_live_battle_context(channel_id):
+    """Which real campaign/turn/system a report should be tagged with,
+    instead of config.DEFAULT_*. Returns (campaign_id, turn_id, system_id,
+    note) -- note is a short string worth telling the reporter, or None if
+    nothing's worth mentioning. Raises AmbiguousBattleError (see above) if
+    several battles are pending with no selection made -- the one case this
+    deliberately does NOT degrade to config.DEFAULT_*.
+
+    Priority: an explicit !report selection for this channel (consumed --
+    cleared the moment it's used, so it only ever applies to the one
+    screenshot it was made for) beats everything else. Absent one: exactly
+    one pending battle is used automatically (nothing to actually choose);
+    zero pending battles fall back to config.DEFAULT_* and say why. Same
+    fallback whenever config.BOT_USE_TEST_CAMPAIGN forces it or the
+    campaign server's unreachable."""
     if config.BOT_USE_TEST_CAMPAIGN:
         return (config.DEFAULT_CAMPAIGN_ID, config.DEFAULT_TURN_ID,
                 config.DEFAULT_SYSTEM_ID, None)
+
+    selected = _selected_battle.pop(channel_id, None)
+    if selected is not None:
+        return (selected["campaign_id"], selected["turn_id"], selected["system_id"],
+                f"reporting for your !report selection: {selected['system']}.")
+
     try:
-        async with httpx.AsyncClient(timeout=5) as client:
-            resp = await client.get(f"{config.CAMPAIGN_API_URL}/api/pending_battles.json")
-        resp.raise_for_status()
-        pending = resp.json().get("pending_battles", [])
+        pending = await _fetch_pending_battles()
     except (httpx.HTTPError, ValueError):
         return (config.DEFAULT_CAMPAIGN_ID, config.DEFAULT_TURN_ID, config.DEFAULT_SYSTEM_ID,
                 "couldn't reach the live campaign -- tagged as the test-campaign default instead.")
     if not pending:
         return (config.DEFAULT_CAMPAIGN_ID, config.DEFAULT_TURN_ID, config.DEFAULT_SYSTEM_ID,
                 "nothing's currently pending in the live campaign -- tagged as the test-campaign default instead.")
-    # MVP: several systems can be contested in the same window at once
-    # (see SQUADRONS-CAMPAIGN-DESIGN.md). Picking the lowest system_id
-    # deterministically rather than asking which one is a real
-    # simplification -- fine while a window is rarely more than one or two
-    # contests deep, worth revisiting (a disambiguation question, same
-    # shape as the existing pending-question flow) if that stops being true.
-    chosen = min(pending, key=lambda p: p["system_id"])
-    note = None
     if len(pending) > 1:
-        others = ", ".join(p["system"] for p in pending if p is not chosen)
-        note = f"multiple systems pending ({chosen['system']}, {others}) -- tagged to {chosen['system']}, first by id."
-    return (chosen["campaign_id"], chosen["turn_id"], chosen["system_id"], note)
+        raise AmbiguousBattleError([p["system"] for p in pending])
+    chosen = pending[0]
+    return (chosen["campaign_id"], chosen["turn_id"], chosen["system_id"], None)
 
 
 async def _handle_screenshot(message):
     attachment = message.attachments[0]
     image_bytes = await attachment.read()
-    campaign_id, turn_id, system_id, note = await _get_live_battle_context()
+    try:
+        campaign_id, turn_id, system_id, note = await _get_live_battle_context(message.channel.id)
+    except AmbiguousBattleError as e:
+        await message.reply(
+            f"Multiple systems are pending ({', '.join(e.systems)}) and you haven't `!report`ed "
+            "which one this is -- not tagging a guess. Run `!report <system name>`, then post the "
+            "screenshot again.")
+        return
     if note:
         await message.reply(note)
     response = await backend_client.create_match(
@@ -298,6 +463,8 @@ COMMANDS = {
     "!add-roster": _handle_add_roster,
     "!edit": _handle_edit_player,
     "!edit-winner": _handle_edit_winner,
+    "!pending": _handle_pending,
+    "!report": _handle_report,
     "!help": _handle_help,
 }
 
@@ -318,6 +485,11 @@ async def on_message(message):
     pending = _pending_questions.get(message.channel.id)
     if pending is not None:
         await _handle_pending_answer(message, pending)
+        return
+
+    review = _role_review.get(message.channel.id)
+    if review is not None:
+        await _handle_role_review_answer(message, review)
         return
 
     if message.attachments:

@@ -268,6 +268,8 @@ def render_help():
         "`!add-roster <team_id> <player name>` - attach an existing player to a team's roster (that team's captain only)",
         "`!edit <match_id> <player name> <field>=<value> [...]` - correct a persisted match's stats",
         "`!edit-winner <match_id> <IMPERIAL|REBEL>` - correct a persisted match's winner",
+        "`!pending` - list what the live campaign is waiting on a real match report for",
+        "`!report <system name>` - pick which pending battle your next screenshot in this channel reports",
         "",
         "**Editable fields for !edit** (combine several in one command):",
     ]
