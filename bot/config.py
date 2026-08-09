@@ -38,3 +38,9 @@ DEFAULT_MATCH_TYPE = os.environ.get("BOT_MATCH_TYPE", "pickup")
 # campaign running and never risks tagging into real campaign data.
 CAMPAIGN_API_URL = os.environ.get("CAMPAIGN_API_URL", "http://localhost:8010")
 BOT_USE_TEST_CAMPAIGN = os.environ.get("BOT_USE_TEST_CAMPAIGN", "false").lower() == "true"
+
+# Same key this project's own /matches/latest route already requires
+# (require_campaign_api_key, api/reads.py) -- needed here too, to check
+# "has this battle already been reported" (backend_client.get_latest_match())
+# before persisting a second one for the same real campaign/turn/system.
+CAMPAIGN_API_KEY = os.environ.get("CAMPAIGN_API_KEY")

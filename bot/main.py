@@ -276,13 +276,44 @@ class AmbiguousBattleError(Exception):
         self.systems = systems
 
 
+class AlreadyReportedError(Exception):
+    """A real match already exists for this exact (campaign_id, turn_id,
+    system_id) -- one match per system per turn, full stop, no do-overs by
+    re-uploading a better screenshot. _handle_screenshot() must abort
+    ingestion entirely, same discipline as AmbiguousBattleError above.
+    Found live 2026-08-09: a since-fixed campaign_api_server.py bug (its
+    WindowEngine had no campaign_client) let Yavin Prime keep showing as
+    pending after a real match already existed for it, so a second
+    screenshot silently persisted a second match for the same battle. That
+    root cause is fixed, but this is the direct, explicit guarantee rather
+    than relying on pending_battles happening to already exclude it."""
+    def __init__(self, existing_match):
+        self.existing_match = existing_match
+
+
+async def _already_reported(campaign_id, turn_id, system_id):
+    """True if a real match already exists for this exact scoping.
+    Degrades to False (i.e. doesn't block) on any lookup failure -- an
+    unreachable backend shouldn't itself be why a legitimate report gets
+    rejected; create_match() will surface its own error if something's
+    genuinely wrong."""
+    try:
+        resp = await backend_client.get_latest_match(
+            http_client, config.CAMPAIGN_API_KEY, campaign_id, turn_id, system_id)
+    except httpx.HTTPError:
+        return False
+    return resp.status_code == 200
+
+
 async def _get_live_battle_context(channel_id):
     """Which real campaign/turn/system a report should be tagged with,
     instead of config.DEFAULT_*. Returns (campaign_id, turn_id, system_id,
     note) -- note is a short string worth telling the reporter, or None if
     nothing's worth mentioning. Raises AmbiguousBattleError (see above) if
-    several battles are pending with no selection made -- the one case this
-    deliberately does NOT degrade to config.DEFAULT_*.
+    several battles are pending with no selection made, or
+    AlreadyReportedError if a real match already exists for the chosen
+    scoping -- the two cases this deliberately does NOT degrade to
+    config.DEFAULT_* for.
 
     Priority: an explicit !report selection for this channel (consumed --
     cleared the moment it's used, so it only ever applies to the one
@@ -297,7 +328,10 @@ async def _get_live_battle_context(channel_id):
 
     selected = _selected_battle.pop(channel_id, None)
     if selected is not None:
-        return (selected["campaign_id"], selected["turn_id"], selected["system_id"],
+        campaign_id, turn_id, system_id = selected["campaign_id"], selected["turn_id"], selected["system_id"]
+        if await _already_reported(campaign_id, turn_id, system_id):
+            raise AlreadyReportedError(selected)
+        return (campaign_id, turn_id, system_id,
                 f"reporting for your !report selection: {selected['system']}.")
 
     try:
@@ -311,6 +345,8 @@ async def _get_live_battle_context(channel_id):
     if len(pending) > 1:
         raise AmbiguousBattleError([p["system"] for p in pending])
     chosen = pending[0]
+    if await _already_reported(chosen["campaign_id"], chosen["turn_id"], chosen["system_id"]):
+        raise AlreadyReportedError(chosen)
     return (chosen["campaign_id"], chosen["turn_id"], chosen["system_id"], None)
 
 
@@ -324,6 +360,11 @@ async def _handle_screenshot(message):
             f"Multiple systems are pending ({', '.join(e.systems)}) and you haven't `!report`ed "
             "which one this is -- not tagging a guess. Run `!report <system name>`, then post the "
             "screenshot again.")
+        return
+    except AlreadyReportedError as e:
+        await message.reply(
+            f"**{e.existing_match['system']}** already has a match reported for this turn -- "
+            "one match per system per turn. Not persisting a second one.")
         return
     if note:
         await message.reply(note)

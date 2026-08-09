@@ -31,6 +31,21 @@ async def attach_player_to_roster(client, team_id, requesting_discord_id, ref_pl
     )
 
 
+async def get_latest_match(client, campaign_api_key, campaign_id, turn_id, system_id):
+    """GET /matches/latest -- the same campaign-project read route
+    CampaignClient.get_latest_match() uses (api/reads.py), gated behind
+    require_campaign_api_key unlike every other route here, so this is the
+    one call on this client that needs an explicit X-API-Key header rather
+    than the bot's own auth. Used to check "has this exact battle already
+    been reported" before persisting a new one -- see main.py's
+    AlreadyReportedError."""
+    return await client.get(
+        "/matches/latest",
+        params={"campaign_id": campaign_id, "turn_id": turn_id, "system_id": system_id},
+        headers={"X-API-Key": campaign_api_key},
+    )
+
+
 async def create_match(
     client, campaign_id, turn_id, system_id, match_type, screenshot_ref, image_bytes, filename
 ):
