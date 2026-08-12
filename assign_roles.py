@@ -6,6 +6,43 @@ import sqlite3
 import sys
 import os
 
+from dotenv import load_dotenv
+import psycopg2
+
+load_dotenv()
+
+
+def _mirror_role_to_postgres(player_id, role_value):
+    """Best-effort mirror of a role assignment into the live Postgres DB
+    that the bot/API actually reads at runtime -- squadrons_reference.db
+    (this script's own db_path) was a one-time migration source
+    (db/sqlite_migration.py) and nothing has read it live since, so a
+    sqlite-only write here silently never reaches production. Row ids are
+    shared 1:1 between the two stores (the migration preserves them
+    unchanged), so player_id works against both without translation.
+    Prints a warning instead of raising if Postgres is unreachable, so a
+    correction still lands in sqlite even when Postgres is briefly down --
+    callers should re-run this script once Postgres is back to pick up
+    anything that only made it into sqlite."""
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        print("Warning: DATABASE_URL not set -- role NOT mirrored to Postgres.")
+        return
+    try:
+        conn = psycopg2.connect(database_url)
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE ref_players SET primary_role = %s WHERE id = %s",
+                    (role_value, player_id))
+            conn.commit()
+        finally:
+            conn.close()
+        print(f"Mirrored to Postgres: player id {player_id} -> {role_value}")
+    except Exception as e:
+        print(f"Warning: failed to mirror role to Postgres: {e}")
+
+
 def list_players(db_path, limit=20, offset=0):
     """List players from the reference database"""
     conn = sqlite3.connect(db_path)
@@ -54,10 +91,12 @@ def assign_role(db_path, player_id, role):
     # Update role
     cursor.execute("UPDATE ref_players SET primary_role = ? WHERE id = ?", (role_value, player_id))
     conn.commit()
-    
+
     print(f"Role for player '{player[0]}' (ID: {player_id}) set to: {role_value}")
-    
+
     conn.close()
+
+    _mirror_role_to_postgres(player_id, role_value)
     return True
 
 def assign_roles_interactive(db_path):

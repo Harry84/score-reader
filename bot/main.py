@@ -520,7 +520,12 @@ async def on_ready():
 
 @client.event
 async def on_message(message):
-    if message.author == client.user or not _is_bot_channel(message):
+    # message.author.bot (not just == client.user) -- another bot posting
+    # into this same channel (e.g. the campaign Discord bot's battle
+    # announcements) must never be picked up as an answer to a pending
+    # question/role-review; found live when a battle-result line got
+    # rejected as an invalid role-review answer instead of being ignored.
+    if message.author.bot or not _is_bot_channel(message):
         return
 
     pending = _pending_questions.get(message.channel.id)
