@@ -17,6 +17,33 @@ def test_create_team_then_list_and_get(pg_conn, client, campaign_headers):
     assert fetched["id"] == team["id"]
 
 
+def test_create_team_with_faction_round_trips_through_list_and_get(pg_conn, client, campaign_headers):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    response = client.post("/teams", json={"name": "Imperial Squad", "faction": "imperial"})
+    assert response.status_code == 200
+    team = response.json()
+    assert team["faction"] == "imperial"
+
+    listed = client.get("/teams", headers=campaign_headers).json()
+    assert listed[0]["faction"] == "imperial"
+
+    fetched = client.get(f"/teams/{team['id']}", headers=campaign_headers).json()
+    assert fetched["faction"] == "imperial"
+
+
+def test_create_team_without_faction_defaults_to_null(pg_conn, client, campaign_headers):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    team = client.post("/teams", json={"name": "Rogue Squadron"}).json()
+    assert team["faction"] is None
+
+    fetched = client.get(f"/teams/{team['id']}", headers=campaign_headers).json()
+    assert fetched["faction"] is None
+
+
 def test_get_nonexistent_team_returns_404(pg_conn, client, campaign_headers):
     apply_schema(pg_conn)
     pg_conn.commit()

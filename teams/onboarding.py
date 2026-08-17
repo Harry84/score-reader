@@ -9,19 +9,25 @@ caller against ref_teams.captain_discord_id rather than trusting the caller.
 """
 
 
-def create_team(pg_conn, name, alias=None):
-    """Find-or-create a ref_teams row by name (idempotent, admin action)."""
+def create_team(pg_conn, name, alias=None, faction=None):
+    """Find-or-create a ref_teams row by name (idempotent, admin action).
+
+    faction is only applied on genuine creation -- re-running against an
+    existing team name never overwrites its faction (same
+    find-or-create-is-idempotent contract as the rest of this function).
+    """
     with pg_conn.cursor() as cur:
-        cur.execute("SELECT id, name, captain_discord_id FROM ref_teams WHERE name = %s", (name,))
+        cur.execute("SELECT id, name, captain_discord_id, faction FROM ref_teams WHERE name = %s", (name,))
         row = cur.fetchone()
         if row is None:
             cur.execute(
-                "INSERT INTO ref_teams (name, alias) VALUES (%s, %s) RETURNING id, name, captain_discord_id",
-                (name, alias),
+                "INSERT INTO ref_teams (name, alias, faction) VALUES (%s, %s, %s) "
+                "RETURNING id, name, captain_discord_id, faction",
+                (name, alias, faction),
             )
             row = cur.fetchone()
     pg_conn.commit()
-    return {"id": row[0], "name": row[1], "captain_discord_id": row[2]}
+    return {"id": row[0], "name": row[1], "captain_discord_id": row[2], "faction": row[3]}
 
 
 def create_player(pg_conn, name, primary_team_id=None, primary_role=None, alias=None, source_file=None):
@@ -56,20 +62,20 @@ def set_captain(pg_conn, team_id, captain_discord_id):
 
 def list_teams(pg_conn):
     with pg_conn.cursor() as cur:
-        cur.execute("SELECT id, name, captain_discord_id FROM ref_teams ORDER BY name")
+        cur.execute("SELECT id, name, captain_discord_id, faction FROM ref_teams ORDER BY name")
         rows = cur.fetchall()
-    return [{"id": r[0], "name": r[1], "captain_discord_id": r[2]} for r in rows]
+    return [{"id": r[0], "name": r[1], "captain_discord_id": r[2], "faction": r[3]} for r in rows]
 
 
 def get_team(pg_conn, team_id):
     with pg_conn.cursor() as cur:
         cur.execute(
-            "SELECT id, name, captain_discord_id FROM ref_teams WHERE id = %s", (team_id,)
+            "SELECT id, name, captain_discord_id, faction FROM ref_teams WHERE id = %s", (team_id,)
         )
         row = cur.fetchone()
     if row is None:
         raise ValueError(f"No team with id {team_id}")
-    return {"id": row[0], "name": row[1], "captain_discord_id": row[2]}
+    return {"id": row[0], "name": row[1], "captain_discord_id": row[2], "faction": row[3]}
 
 
 def get_team_roster(pg_conn, team_id):

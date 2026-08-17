@@ -390,14 +390,24 @@ async def _handle_create_team(message, rest):
         return
     name = rest.strip()
     if not name:
-        await message.reply("Usage: `!create-team <name>`")
+        await message.reply("Usage: `!create-team <name> [faction]`")
         return
-    response = await backend_client.create_team(http_client, name)
+    # Optional trailing "rebel"/"imperial" token (IMPERIAL-MIRROR-BUILD-PLAN.md,
+    # Dynamic Trust Alignment repo) -- not a separate arg slot, so a team name
+    # that itself ends in one of those words can't be given a faction via this
+    # command (create it unfactioned, then fix up faction directly if that
+    # ever comes up).
+    faction = None
+    head, sep, tail = name.rpartition(" ")
+    if sep and tail.lower() in ("rebel", "imperial") and head.strip():
+        name, faction = head.strip(), tail.lower()
+    response = await backend_client.create_team(http_client, name, faction=faction)
     if response.status_code != 200:
         await _reply_error(message, response)
         return
     team = response.json()
-    await message.reply(f"Team '{team['name']}' ready (id `{team['id']}`).")
+    suffix = f" ({team['faction']})" if team.get("faction") else ""
+    await message.reply(f"Team '{team['name']}'{suffix} ready (id `{team['id']}`).")
 
 
 async def _handle_create_player(message, rest):

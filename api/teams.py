@@ -32,6 +32,7 @@ router = APIRouter()
 class CreateTeamRequest(BaseModel):
     name: str
     alias: str | None = None
+    faction: str | None = None
 
 
 class CreatePlayerRequest(BaseModel):
@@ -53,7 +54,7 @@ class RosterRequest(BaseModel):
 
 @router.post("/teams")
 def create_team_route(body: CreateTeamRequest, pg_conn=Depends(get_pg_conn)):
-    return create_team(pg_conn, body.name, alias=body.alias)
+    return create_team(pg_conn, body.name, alias=body.alias, faction=body.faction)
 
 
 @router.get("/teams", dependencies=[Depends(require_campaign_api_key)])

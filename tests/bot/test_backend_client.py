@@ -33,6 +33,39 @@ def test_create_team_posts_name():
     assert captured == {"method": "POST", "url": "/teams", "json": {"name": "Rogue Squadron"}}
 
 
+def test_create_team_posts_faction_when_given():
+    captured = {}
+
+    def handler(request):
+        captured["json"] = json.loads(request.content)
+        return httpx.Response(200, json={"id": 1, "name": "Imperial Squad", "faction": "imperial"})
+
+    async def run():
+        async with _client(handler) as client:
+            return await backend_client.create_team(client, "Imperial Squad", faction="imperial")
+
+    response = _run(run())
+
+    assert response.status_code == 200
+    assert captured["json"] == {"name": "Imperial Squad", "faction": "imperial"}
+
+
+def test_create_team_omits_faction_when_not_given():
+    captured = {}
+
+    def handler(request):
+        captured["json"] = json.loads(request.content)
+        return httpx.Response(200, json={"id": 1, "name": "Rogue Squadron"})
+
+    async def run():
+        async with _client(handler) as client:
+            return await backend_client.create_team(client, "Rogue Squadron")
+
+    _run(run())
+
+    assert captured["json"] == {"name": "Rogue Squadron"}
+
+
 def test_find_players_sends_name_query_param():
     captured = {}
 

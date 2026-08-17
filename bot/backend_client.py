@@ -6,8 +6,11 @@ matching how api/teams.py and api/main.py report errors.
 """
 
 
-async def create_team(client, name):
-    return await client.post("/teams", json={"name": name})
+async def create_team(client, name, faction=None):
+    body = {"name": name}
+    if faction is not None:
+        body["faction"] = faction
+    return await client.post("/teams", json=body)
 
 
 async def set_captain(client, team_id, captain_discord_id):

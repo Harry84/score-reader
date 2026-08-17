@@ -262,7 +262,7 @@ def parse_edit_updates(tokens):
 def render_help():
     lines = [
         "**Commands**",
-        "`!create-team <name>` - create or find a team by name (Bot Admin only)",
+        "`!create-team <name> [rebel|imperial]` - create or find a team by name, optionally with a campaign faction (Bot Admin only)",
         "`!create-player <name>` - create a new canonical player (Bot Admin only)",
         "`!set-captain <team_id> @discord_user` - assign a team's captain (Bot Admin only)",
         "`!add-roster <team_id> <player name>` - attach an existing player to a team's roster (that team's captain only)",
