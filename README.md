@@ -2,6 +2,13 @@
 
 This project uses AI vision capabilities to extract and analyze scores from Star Wars Squadrons game screenshots, building a comprehensive database of match results and player statistics. It includes ELO rating systems to track both team and individual player skill levels.
 
+## Live Demo
+
+- **Main site**: [https://harry84.github.io/score-reader/](https://harry84.github.io/score-reader/)
+- **Mirror site**: [https://gmt-erisi.github.io/score-reader/](https://gmt-erisi.github.io/score-reader/)
+
+---
+
 ## Quickstart: Discord score bot backend
 
 The current, actively-developed system: a Discord bot posts a screenshot, a FastAPI backend extracts it via Claude vision and persists a Match to Postgres, recomputing ELO synchronously. See `ROADMAP.md` for the full implementation plan and status, and `docs/adr/` for the architectural decisions behind it. (Everything below "Project Structure" documents the older, pre-Discord CLI/SQLite workflow it's superseding - see the note there.)
