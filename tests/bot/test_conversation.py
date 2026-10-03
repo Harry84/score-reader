@@ -1,0 +1,478 @@
+import pytest
+
+from bot.conversation import (
+    EDITABLE_PLAYER_FIELDS,
+    INGEST_TRIGGER_EMOJI,
+    is_admin_reactor,
+    is_dead_end,
+    parse_answer,
+    parse_edit_command,
+    parse_edit_updates,
+    render_admin_required,
+    render_cancelled,
+    render_error_detail,
+    render_help,
+    render_match_summary,
+    render_question,
+    render_rejection,
+    render_screenshot_received,
+)
+
+
+def test_render_player_match_question_lists_candidates():
+    question = {
+        "type": "player_match",
+        "player_name": "Wedg",
+        "candidates": [{"id": 1, "name": "Wedge"}, {"id": 2, "name": "Wedgy"}],
+    }
+    text = render_question(question)
+    assert "Wedg" in text
+    # Periods after the number are backslash-escaped so Discord doesn't
+    # render these as a native ordered list and silently renumber them.
+    assert "1\\. Wedge" in text
+    assert "2\\. Wedgy" in text
+
+
+def test_is_admin_reactor_true_when_role_present():
+    assert is_admin_reactor(["Member", "Bot Admin"], "Bot Admin") is True
+
+
+def test_is_admin_reactor_false_when_role_absent():
+    assert is_admin_reactor(["Member"], "Bot Admin") is False
+
+
+def test_is_admin_reactor_false_for_no_roles():
+    assert is_admin_reactor([], "Bot Admin") is False
+
+
+def test_render_screenshot_received_mentions_trigger_emoji():
+    text = render_screenshot_received()
+    assert text.count(INGEST_TRIGGER_EMOJI) == 2
+
+
+def test_render_player_match_question_with_no_candidates():
+    question = {"type": "player_match", "player_name": "Nobody", "candidates": []}
+    text = render_question(question)
+    assert "no close matches" in text
+
+
+def test_render_player_match_question_offers_none_of_the_above_when_candidates_present():
+    question = {
+        "type": "player_match",
+        "player_name": "Wedg",
+        "candidates": [{"id": 1, "name": "Wedge"}],
+    }
+    text = render_question(question)
+    assert "0\\. None of the above" in text
+
+
+def test_render_team_assignment_question_offers_none_of_the_above_when_candidates_present():
+    question = {
+        "type": "team_assignment",
+        "faction": "rebel",
+        "candidates": [{"id": 5, "name": "Rogue Squadron"}],
+    }
+    text = render_question(question)
+    assert "0\\. None of the above" in text
+
+
+def test_render_player_match_question_does_not_use_discord_autonumbered_list_syntax():
+    """Discord renders consecutive 'N. text' lines as a native ordered list
+    and renumbers them sequentially from the first item, ignoring the actual
+    digit in the source - so an unescaped '0. None of the above' line right
+    after '3. Candidate' would be displayed as '4.', not '0.'. The period
+    must be backslash-escaped to force literal rendering.
+    """
+    question = {
+        "type": "player_match",
+        "player_name": "Wedg",
+        "candidates": [
+            {"id": 1, "name": "Wedge"},
+            {"id": 2, "name": "Wedgy"},
+            {"id": 3, "name": "Wedgo"},
+        ],
+    }
+    text = render_question(question)
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped[:1].isdigit():
+            assert "\\." in stripped, f"unescaped numbered line would be renumbered by Discord: {line!r}"
+
+
+def test_is_dead_end_true_for_player_match_with_no_candidates():
+    question = {"type": "player_match", "player_name": "Nobody", "candidates": []}
+    assert is_dead_end(question) is True
+
+
+def test_is_dead_end_true_for_team_assignment_with_no_candidates():
+    question = {"type": "team_assignment", "faction": "rebel", "candidates": []}
+    assert is_dead_end(question) is True
+
+
+def test_is_dead_end_false_when_candidates_present():
+    question = {
+        "type": "player_match",
+        "player_name": "Wedg",
+        "candidates": [{"id": 1, "name": "Wedge"}],
+    }
+    assert is_dead_end(question) is False
+
+
+def test_is_dead_end_false_for_roster_size_and_missing_field():
+    assert is_dead_end({"type": "roster_size", "faction": "rebel", "count": 4, "expected": 5}) is False
+    assert (
+        is_dead_end(
+            {"type": "missing_field", "player_name": "Wedge", "field": "score", "numeric": True}
+        )
+        is False
+    )
+
+
+def test_render_team_assignment_question_lists_candidates():
+    question = {
+        "type": "team_assignment",
+        "faction": "rebel",
+        "candidates": [{"id": 5, "name": "Rogue Squadron"}],
+    }
+    text = render_question(question)
+    assert "rebel" in text
+    assert "1\\. Rogue Squadron" in text
+
+
+def test_render_roster_size_question():
+    question = {"type": "roster_size", "faction": "imperial", "count": 3, "expected": 5}
+    text = render_question(question)
+    assert "imperial" in text.lower()
+    assert "3" in text
+    assert "5" in text
+    assert "confirm" in text.lower()
+
+
+def test_render_question_mentions_cancel_when_answerable():
+    question = {"type": "roster_size", "faction": "imperial", "count": 3, "expected": 5}
+    assert "cancel" in render_question(question).lower()
+
+
+def test_render_question_omits_cancel_for_dead_end():
+    question = {"type": "player_match", "player_name": "Nobody", "candidates": []}
+    assert "cancel" not in render_question(question).lower()
+
+
+def test_render_cancelled_mentions_re_posting():
+    text = render_cancelled()
+    assert "re-post" in text.lower() or "repost" in text.lower()
+
+
+def test_render_missing_field_question_numeric():
+    question = {"type": "missing_field", "player_name": "Vader", "field": "kills", "numeric": True}
+    text = render_question(question)
+    assert "Vader" in text
+    assert "kills" in text
+    assert "number" in text.lower()
+
+
+def test_render_missing_field_question_string():
+    question = {
+        "type": "missing_field",
+        "player_name": "Vader",
+        "field": "position",
+        "numeric": False,
+    }
+    text = render_question(question)
+    assert "Vader" in text
+    assert "position" in text
+
+
+def test_parse_answer_player_match_selects_candidate_by_number():
+    question = {
+        "type": "player_match",
+        "player_name": "Wedg",
+        "candidates": [{"id": 1, "name": "Wedge"}, {"id": 2, "name": "Wedgy"}],
+    }
+    assert parse_answer(question, "2") == {"ref_player_id": 2}
+
+
+def test_parse_answer_team_assignment_selects_candidate_by_number():
+    question = {
+        "type": "team_assignment",
+        "faction": "rebel",
+        "candidates": [{"id": 5, "name": "Rogue Squadron"}],
+    }
+    assert parse_answer(question, "1") == {"ref_team_id": 5}
+
+
+def test_parse_answer_rejects_out_of_range_number():
+    question = {
+        "type": "player_match",
+        "player_name": "Wedg",
+        "candidates": [{"id": 1, "name": "Wedge"}],
+    }
+    with pytest.raises(ValueError):
+        parse_answer(question, "5")
+
+
+def test_parse_answer_player_match_zero_means_none_of_the_above():
+    question = {
+        "type": "player_match",
+        "player_name": "Wedg",
+        "candidates": [{"id": 1, "name": "Wedge"}, {"id": 2, "name": "Wedgy"}],
+    }
+    assert parse_answer(question, "0") is None
+
+
+def test_parse_answer_team_assignment_zero_means_none_of_the_above():
+    question = {
+        "type": "team_assignment",
+        "faction": "rebel",
+        "candidates": [{"id": 5, "name": "Rogue Squadron"}],
+    }
+    assert parse_answer(question, "0") is None
+
+
+def test_render_rejection_player_match():
+    question = {"type": "player_match", "player_name": "Jaxal", "candidates": []}
+    text = render_rejection(question)
+    assert "Jaxal" in text
+    assert "new player" in text
+
+
+def test_render_rejection_team_assignment():
+    question = {"type": "team_assignment", "faction": "rebel", "candidates": []}
+    text = render_rejection(question)
+    assert "rebel" in text
+
+
+def test_parse_answer_roster_size_accepts_confirm_case_insensitive():
+    question = {"type": "roster_size", "faction": "imperial", "count": 3, "expected": 5}
+    assert parse_answer(question, "confirm") == {"confirm": True}
+    assert parse_answer(question, "CONFIRM") == {"confirm": True}
+
+
+def test_parse_answer_roster_size_rejects_anything_else():
+    question = {"type": "roster_size", "faction": "imperial", "count": 3, "expected": 5}
+    with pytest.raises(ValueError):
+        parse_answer(question, "yes")
+
+
+def test_parse_answer_missing_field_numeric_coerces_int():
+    question = {"type": "missing_field", "player_name": "Vader", "field": "kills", "numeric": True}
+    assert parse_answer(question, "4") == {"value": 4}
+
+
+def test_parse_answer_missing_field_numeric_rejects_non_numeric():
+    question = {"type": "missing_field", "player_name": "Vader", "field": "kills", "numeric": True}
+    with pytest.raises(ValueError):
+        parse_answer(question, "four")
+
+
+def test_parse_answer_missing_field_string_keeps_text():
+    question = {
+        "type": "missing_field",
+        "player_name": "Vader",
+        "field": "position",
+        "numeric": False,
+    }
+    assert parse_answer(question, "Titan One") == {"value": "Titan One"}
+
+
+def test_render_match_summary_includes_winner_and_both_factions():
+    result = {
+        "status": "persisted",
+        "match_id": 42,
+        "winner": "IMPERIAL",
+        "players": {
+            "imperial": [
+                {
+                    "player": "Vader",
+                    "role": "Flex",
+                    "score": 1675,
+                    "kills": 4,
+                    "deaths": 2,
+                    "assists": 1,
+                    "ai_kills": 18,
+                    "cap_ship_damage": 30139,
+                },
+            ],
+            "rebel": [
+                {
+                    "player": "Wedge",
+                    "role": "Support",
+                    "score": 1200,
+                    "kills": 2,
+                    "deaths": 4,
+                    "assists": 0,
+                    "ai_kills": 10,
+                    "cap_ship_damage": 0,
+                },
+            ],
+        },
+    }
+    text = render_match_summary(result)
+    assert "42" in text
+    assert "IMPERIAL" in text
+    assert "Vader" in text
+    assert "Wedge" in text
+    assert "30139" in text
+
+
+def test_render_match_summary_skips_empty_faction():
+    result = {
+        "status": "persisted",
+        "match_id": 1,
+        "winner": "REBEL",
+        "players": {
+            "imperial": [],
+            "rebel": [
+                {
+                    "player": "Wedge",
+                    "role": None,
+                    "score": 0,
+                    "kills": 0,
+                    "deaths": 0,
+                    "assists": 0,
+                    "ai_kills": 0,
+                    "cap_ship_damage": 0,
+                }
+            ],
+        },
+    }
+    text = render_match_summary(result)
+    assert "IMPERIAL" not in text
+    assert "Wedge" in text
+
+
+def test_render_error_detail_plain_string_passthrough():
+    assert render_error_detail("No player 'Nobody' on match 1") == "No player 'Nobody' on match 1"
+
+
+def test_render_error_detail_duplicate_match_shape_renders_summary():
+    detail = {
+        "message": "Match already entered as match 42",
+        "existing_match": {
+            "status": "persisted",
+            "match_id": 42,
+            "winner": "IMPERIAL",
+            "players": {
+                "imperial": [
+                    {
+                        "player": "Vader",
+                        "role": "Flex",
+                        "score": 1675,
+                        "kills": 4,
+                        "deaths": 2,
+                        "assists": 1,
+                        "ai_kills": 18,
+                        "cap_ship_damage": 30139,
+                    }
+                ],
+                "rebel": [],
+            },
+        },
+    }
+    text = render_error_detail(detail)
+    assert "Match already entered as match 42" in text
+    assert "Vader" in text
+    assert "42" in text
+
+
+def test_parse_answer_rejects_non_numeric_for_player_match():
+    question = {
+        "type": "player_match",
+        "player_name": "Wedg",
+        "candidates": [{"id": 1, "name": "Wedge"}],
+    }
+    with pytest.raises(ValueError):
+        parse_answer(question, "Wedge")
+
+
+def test_parse_edit_command_splits_match_id_player_name_and_edits():
+    match_id, player_name, edit_tokens = parse_edit_command("42 Vader score=1700 kills=5")
+    assert match_id == 42
+    assert player_name == "Vader"
+    assert edit_tokens == ["score=1700", "kills=5"]
+
+
+def test_parse_edit_command_handles_player_name_with_spaces():
+    match_id, player_name, edit_tokens = parse_edit_command("42 Not Tom score=1700")
+    assert match_id == 42
+    assert player_name == "Not Tom"
+    assert edit_tokens == ["score=1700"]
+
+
+def test_parse_edit_command_rejects_missing_match_id():
+    with pytest.raises(ValueError):
+        parse_edit_command("Vader score=1700")
+
+
+def test_parse_edit_command_rejects_missing_player_name():
+    with pytest.raises(ValueError):
+        parse_edit_command("42 score=1700")
+
+
+def test_parse_edit_updates_coerces_numeric_fields():
+    assert parse_edit_updates(["score=1700", "kills=5"]) == {"score": 1700, "kills": 5}
+
+
+def test_parse_edit_updates_keeps_name_and_role_as_strings():
+    assert parse_edit_updates(["name=Tarkin", "role=Support"]) == {
+        "name": "Tarkin",
+        "role": "Support",
+    }
+
+
+def test_parse_edit_updates_role_none_sentinel_clears_role():
+    assert parse_edit_updates(["role=none"]) == {"role": None}
+    assert parse_edit_updates(["role=NULL"]) == {"role": None}
+    assert parse_edit_updates(["role=-"]) == {"role": None}
+
+
+def test_parse_edit_updates_rejects_unknown_field():
+    with pytest.raises(ValueError):
+        parse_edit_updates(["favorite_color=red"])
+
+
+def test_parse_edit_updates_rejects_non_numeric_value_for_numeric_field():
+    with pytest.raises(ValueError):
+        parse_edit_updates(["score=a-lot"])
+
+
+def test_parse_edit_updates_rejects_malformed_token():
+    with pytest.raises(ValueError):
+        parse_edit_updates(["score"])
+
+
+def test_parse_edit_updates_rejects_empty_tokens():
+    with pytest.raises(ValueError):
+        parse_edit_updates([])
+
+
+def test_render_help_lists_all_commands_and_every_editable_field():
+    text = render_help()
+    for command in (
+        "!create-team",
+        "!create-player",
+        "!set-captain",
+        "!add-roster",
+        "!edit",
+        "!edit-winner",
+    ):
+        assert command in text
+    for field in EDITABLE_PLAYER_FIELDS:
+        assert f"{field}=" in text
+
+
+def test_render_help_flags_admin_only_commands():
+    text = render_help()
+    create_team_line = next(line for line in text.splitlines() if "!create-team" in line)
+    create_player_line = next(line for line in text.splitlines() if "!create-player" in line)
+    set_captain_line = next(line for line in text.splitlines() if "!set-captain" in line)
+    add_roster_line = next(line for line in text.splitlines() if "!add-roster" in line)
+    assert "admin" in create_team_line.lower()
+    assert "admin" in create_player_line.lower()
+    assert "admin" in set_captain_line.lower()
+    assert "admin" not in add_roster_line.lower()
+
+
+def test_render_admin_required_names_the_role():
+    text = render_admin_required("Bot Admin")
+    assert "Bot Admin" in text

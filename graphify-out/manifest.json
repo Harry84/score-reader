@@ -1,0 +1,1226 @@
+{
+  ".roo/mcp.json": {
+    "mtime": 1745938017.956799,
+    "seen": 1789899187.6746335,
+    "ast_hash": "2a2df9f5ba0fb4755eb5971ea55b467f",
+    "semantic_hash": "2a2df9f5ba0fb4755eb5971ea55b467f"
+  },
+  "Extracted Results/LSS/LSS_results.json": {
+    "mtime": 1745938017.957774,
+    "seen": 1789899187.6746335,
+    "ast_hash": "c4d1838a86ce8866512613a2876d2b9a",
+    "semantic_hash": "c4d1838a86ce8866512613a2876d2b9a"
+  },
+  "Extracted Results/LSS/LSS_results_cleaned.json": {
+    "mtime": 1745938017.9587743,
+    "seen": 1789899187.6746335,
+    "ast_hash": "e8ff60e327225df203fc97ddae524e92",
+    "semantic_hash": "e8ff60e327225df203fc97ddae524e92"
+  },
+  "Extracted Results/SCL14/SCL14_results.json": {
+    "mtime": 1745938017.9587743,
+    "seen": 1789899187.6746335,
+    "ast_hash": "1695d8f4cbc19741ea752ebcd1c799a6",
+    "semantic_hash": "1695d8f4cbc19741ea752ebcd1c799a6"
+  },
+  "Extracted Results/SCL15/SCL15_results.json": {
+    "mtime": 1745938017.9597743,
+    "seen": 1789899187.6746335,
+    "ast_hash": "26f8f8b688f8093c190041537722e732",
+    "semantic_hash": "26f8f8b688f8093c190041537722e732"
+  },
+  "Extracted Results/TEST/TEST_results.json": {
+    "mtime": 1745938017.960775,
+    "seen": 1789899187.6746335,
+    "ast_hash": "32c6c51af20d89339d6e0a45261a0e32",
+    "semantic_hash": "32c6c51af20d89339d6e0a45261a0e32"
+  },
+  "Extracted Results/TEST/TEST_results_cleaned.json": {
+    "mtime": 1745938017.960775,
+    "seen": 1789899187.6746335,
+    "ast_hash": "d888ba34f7f35df017d7a0d72ecaea24",
+    "semantic_hash": "d888ba34f7f35df017d7a0d72ecaea24"
+  },
+  "Extracted Results/TEST/TEST_results_verified.json": {
+    "mtime": 1745938017.9617739,
+    "seen": 1789899187.6746335,
+    "ast_hash": "d888ba34f7f35df017d7a0d72ecaea24",
+    "semantic_hash": "d888ba34f7f35df017d7a0d72ecaea24"
+  },
+  "Extracted Results/all_seasons_data.json": {
+    "mtime": 1745938017.9617739,
+    "seen": 1789899187.6746335,
+    "ast_hash": "5e6f20536d59020329cf61a07f537a16",
+    "semantic_hash": "5e6f20536d59020329cf61a07f537a16"
+  },
+  "api/__init__.py": {
+    "mtime": 1785533780.6184528,
+    "seen": 1789899187.6746335,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "api/auth.py": {
+    "mtime": 1785787171.6453035,
+    "seen": 1789899187.6746335,
+    "ast_hash": "eaab96d64aff1893147a0855f878fd2f",
+    "semantic_hash": "eaab96d64aff1893147a0855f878fd2f"
+  },
+  "api/config.py": {
+    "mtime": 1785787168.4324572,
+    "seen": 1789899187.6746335,
+    "ast_hash": "06d634ceb0ef2108bcc023fbc42ca661",
+    "semantic_hash": "06d634ceb0ef2108bcc023fbc42ca661"
+  },
+  "api/dependencies.py": {
+    "mtime": 1785533780.6194537,
+    "seen": 1789899187.6746335,
+    "ast_hash": "59a0700a8a753a055e5838cf213e3e56",
+    "semantic_hash": "59a0700a8a753a055e5838cf213e3e56"
+  },
+  "api/main.py": {
+    "mtime": 1785787279.702568,
+    "seen": 1789899187.6746335,
+    "ast_hash": "125c65a30d15930f3485454e3111d030",
+    "semantic_hash": "125c65a30d15930f3485454e3111d030"
+  },
+  "api/reads.py": {
+    "mtime": 1785787268.5959501,
+    "seen": 1789899187.6746335,
+    "ast_hash": "c43a82ca2d9fb9d9e634a26457b51caa",
+    "semantic_hash": "c43a82ca2d9fb9d9e634a26457b51caa"
+  },
+  "api/teams.py": {
+    "mtime": 1787003845.4513063,
+    "seen": 1789899187.6746335,
+    "ast_hash": "c4f5ff46452c5e465d3db28193863177",
+    "semantic_hash": "c4f5ff46452c5e465d3db28193863177"
+  },
+  "assign_roles.py": {
+    "mtime": 1786576333.039694,
+    "seen": 1789899187.6746335,
+    "ast_hash": "a6fdd37e58d590bdd8a8874e7950809a",
+    "semantic_hash": "a6fdd37e58d590bdd8a8874e7950809a"
+  },
+  "bot/__init__.py": {
+    "mtime": 1785535665.6664712,
+    "seen": 1789899187.6746335,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "bot/backend_client.py": {
+    "mtime": 1787003850.3071854,
+    "seen": 1789899187.6746335,
+    "ast_hash": "4ee451525c1ffbc6f442ef0a1bfb8fe0",
+    "semantic_hash": "4ee451525c1ffbc6f442ef0a1bfb8fe0"
+  },
+  "bot/config.py": {
+    "mtime": 1786234127.826028,
+    "seen": 1789899187.6746335,
+    "ast_hash": "87587637c583c10293dbdd8bc47f2482",
+    "semantic_hash": "87587637c583c10293dbdd8bc47f2482"
+  },
+  "bot/conversation.py": {
+    "mtime": 1787003882.3285005,
+    "seen": 1789899187.6746335,
+    "ast_hash": "1c9e7f681c507efc6ab5f33f5834d1c9",
+    "semantic_hash": "1c9e7f681c507efc6ab5f33f5834d1c9"
+  },
+  "bot/main.py": {
+    "mtime": 1787003866.213245,
+    "seen": 1789899187.6746335,
+    "ast_hash": "3e83bd865d479a9a0a2c68837265ea64",
+    "semantic_hash": "3e83bd865d479a9a0a2c68837265ea64"
+  },
+  "db/__init__.py": {
+    "mtime": 1785533780.620454,
+    "seen": 1789899187.6746335,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "db/init/01-create-test-db.sql": {
+    "mtime": 1785533780.6214547,
+    "seen": 1789899187.6746335,
+    "ast_hash": "bc6f770dcdd951c1536d2008fed228cc",
+    "semantic_hash": "bc6f770dcdd951c1536d2008fed228cc"
+  },
+  "db/migrate_runner.py": {
+    "mtime": 1785533780.6214547,
+    "seen": 1789899187.6746335,
+    "ast_hash": "8b19a31d92e1dac67b0ecbe4901bf94f",
+    "semantic_hash": "8b19a31d92e1dac67b0ecbe4901bf94f"
+  },
+  "db/migrations/0001_initial_schema.sql": {
+    "mtime": 1785533780.6224535,
+    "seen": 1789899187.6746335,
+    "ast_hash": "42fdc8ec2a1a904a77ad5072325efa0a",
+    "semantic_hash": "42fdc8ec2a1a904a77ad5072325efa0a"
+  },
+  "db/migrations/0002_seed_systems.sql": {
+    "mtime": 1785533780.6224535,
+    "seen": 1789899187.6746335,
+    "ast_hash": "97e0165dd8976819658a29fc5651b1c2",
+    "semantic_hash": "97e0165dd8976819658a29fc5651b1c2"
+  },
+  "db/migrations/0003_pending_matches_extracted_data.sql": {
+    "mtime": 1785533780.6234546,
+    "seen": 1789899187.6746335,
+    "ast_hash": "c4796051a5c804e1de719cc6ed842057",
+    "semantic_hash": "c4796051a5c804e1de719cc6ed842057"
+  },
+  "db/migrations/0004_pending_matches_match_type.sql": {
+    "mtime": 1785533780.6234546,
+    "seen": 1789899187.6746335,
+    "ast_hash": "ad577a91f17334f5dc58f477b131cb7d",
+    "semantic_hash": "ad577a91f17334f5dc58f477b131cb7d"
+  },
+  "db/migrations/0005_pending_matches_status_drop_match_type_step.sql": {
+    "mtime": 1785533780.6234546,
+    "seen": 1789899187.6746335,
+    "ast_hash": "6b5479d40e2014c2e9b34e52f8cd68b0",
+    "semantic_hash": "6b5479d40e2014c2e9b34e52f8cd68b0"
+  },
+  "db/migrations/0006_pending_matches_status_team_assignment.sql": {
+    "mtime": 1785533780.624453,
+    "seen": 1789899187.6746335,
+    "ast_hash": "466bea4c535672246870e64cfe14dae6",
+    "semantic_hash": "466bea4c535672246870e64cfe14dae6"
+  },
+  "db/migrations/0007_team_elo.sql": {
+    "mtime": 1785533780.624453,
+    "seen": 1789899187.6746335,
+    "ast_hash": "33d0deec911714c679b2918e73fd14c1",
+    "semantic_hash": "33d0deec911714c679b2918e73fd14c1"
+  },
+  "db/migrations/0008_campaign_scoping.sql": {
+    "mtime": 1785533780.6254532,
+    "seen": 1789899187.6746335,
+    "ast_hash": "7d0d5693018a0078af3f6b47f8757d6f",
+    "semantic_hash": "7d0d5693018a0078af3f6b47f8757d6f"
+  },
+  "db/migrations/0009_player_elo.sql": {
+    "mtime": 1785533780.6254532,
+    "seen": 1789899187.6746335,
+    "ast_hash": "e6ec40cfcb7478096a494e9551d373ee",
+    "semantic_hash": "e6ec40cfcb7478096a494e9551d373ee"
+  },
+  "db/migrations/0010_team_captain.sql": {
+    "mtime": 1785533780.6264536,
+    "seen": 1789899187.6746335,
+    "ast_hash": "36923777ce317ae100e76ec8f9cf4ac4",
+    "semantic_hash": "36923777ce317ae100e76ec8f9cf4ac4"
+  },
+  "db/migrations/0011_pending_matches_status_validation.sql": {
+    "mtime": 1785540982.609024,
+    "seen": 1789899187.6746335,
+    "ast_hash": "5d659fcf9ba5009b018c806b48fa3167",
+    "semantic_hash": "5d659fcf9ba5009b018c806b48fa3167"
+  },
+  "db/migrations/0012_matches_stats_hash.sql": {
+    "mtime": 1785623947.227292,
+    "seen": 1789899187.6746335,
+    "ast_hash": "68b69f0000a15d6221931b6aab789d68",
+    "semantic_hash": "68b69f0000a15d6221931b6aab789d68"
+  },
+  "db/migrations/0013_matches_image_hash.sql": {
+    "mtime": 1785624746.1016097,
+    "seen": 1789899187.6746335,
+    "ast_hash": "89ecc54fe18cf94ebe1aae9e2a481e8b",
+    "semantic_hash": "89ecc54fe18cf94ebe1aae9e2a481e8b"
+  },
+  "db/migrations/0014_pending_matches_status_cancelled.sql": {
+    "mtime": 1785627162.6956766,
+    "seen": 1789899187.6746335,
+    "ast_hash": "76588bee67759c0fb1de1a6a6227ce7a",
+    "semantic_hash": "76588bee67759c0fb1de1a6a6227ce7a"
+  },
+  "db/migrations/0015_team_faction.sql": {
+    "mtime": 1787003817.4789383,
+    "seen": 1789899187.6746335,
+    "ast_hash": "821be6416f75d44c5f15e27789a7989b",
+    "semantic_hash": "821be6416f75d44c5f15e27789a7989b"
+  },
+  "db/run_migration.py": {
+    "mtime": 1785533780.6264536,
+    "seen": 1789899187.6746335,
+    "ast_hash": "26153909e9e2faf281491a0a1318994e",
+    "semantic_hash": "26153909e9e2faf281491a0a1318994e"
+  },
+  "db/sqlite_migration.py": {
+    "mtime": 1785533780.6264536,
+    "seen": 1789899187.6746335,
+    "ast_hash": "057ca6a769123b21aecefa4f7df42881",
+    "semantic_hash": "057ca6a769123b21aecefa4f7df42881"
+  },
+  "elo_reports_pickup/pickup_farmer_elo_history.json": {
+    "mtime": 1745940482.3498802,
+    "seen": 1789899187.6746335,
+    "ast_hash": "e2a8fd4c26f0d1c0204660647e173876",
+    "semantic_hash": "e2a8fd4c26f0d1c0204660647e173876"
+  },
+  "elo_reports_pickup/pickup_farmer_elo_ladder.json": {
+    "mtime": 1745940482.3498802,
+    "seen": 1789899187.6746335,
+    "ast_hash": "281b04ce1c0324c5077dc9e33762001d",
+    "semantic_hash": "281b04ce1c0324c5077dc9e33762001d"
+  },
+  "elo_reports_pickup/pickup_flex_elo_history.json": {
+    "mtime": 1745940482.350882,
+    "seen": 1789899187.6746335,
+    "ast_hash": "234cc08a38815970db636f246e550e52",
+    "semantic_hash": "234cc08a38815970db636f246e550e52"
+  },
+  "elo_reports_pickup/pickup_flex_elo_ladder.json": {
+    "mtime": 1745940482.350882,
+    "seen": 1789899187.6746335,
+    "ast_hash": "441f5d54b0536c7d9bd4071807b23077",
+    "semantic_hash": "441f5d54b0536c7d9bd4071807b23077"
+  },
+  "elo_reports_pickup/pickup_player_elo_history.json": {
+    "mtime": 1745940482.351881,
+    "seen": 1789899187.6746335,
+    "ast_hash": "6caeb4c321ea3d1df95da679d102d8af",
+    "semantic_hash": "6caeb4c321ea3d1df95da679d102d8af"
+  },
+  "elo_reports_pickup/pickup_player_elo_ladder.json": {
+    "mtime": 1745938017.9647734,
+    "seen": 1789899187.6746335,
+    "ast_hash": "f89114943ec4c2b4245a44d0e274288b",
+    "semantic_hash": "f89114943ec4c2b4245a44d0e274288b"
+  },
+  "elo_reports_pickup/pickup_support_elo_history.json": {
+    "mtime": 1745940482.351881,
+    "seen": 1789899187.6746335,
+    "ast_hash": "0812cd9e8202d0d16a40a045692bbfdf",
+    "semantic_hash": "0812cd9e8202d0d16a40a045692bbfdf"
+  },
+  "elo_reports_pickup/pickup_support_elo_ladder.json": {
+    "mtime": 1745940482.352883,
+    "seen": 1789899187.6746335,
+    "ast_hash": "1ca8b66128288533d3857702138fee8b",
+    "semantic_hash": "1ca8b66128288533d3857702138fee8b"
+  },
+  "elo_reports_pickup/player_performance_pickup_role_farmer.json": {
+    "mtime": 1745940482.352883,
+    "seen": 1789899187.6746335,
+    "ast_hash": "94ae01433d6beef9005f43c0cfffbc0f",
+    "semantic_hash": "94ae01433d6beef9005f43c0cfffbc0f"
+  },
+  "elo_reports_pickup/player_performance_pickup_role_flex.json": {
+    "mtime": 1745940482.352883,
+    "seen": 1789899187.6746335,
+    "ast_hash": "8dbfdf86af0b620e80cded0dff09edd8",
+    "semantic_hash": "8dbfdf86af0b620e80cded0dff09edd8"
+  },
+  "elo_reports_pickup/player_performance_pickup_role_support.json": {
+    "mtime": 1745940482.3538806,
+    "seen": 1789899187.6746335,
+    "ast_hash": "6512515e2a9ea944958aef080436a0ea",
+    "semantic_hash": "6512515e2a9ea944958aef080436a0ea"
+  },
+  "elo_reports_pickup/player_performance_role_farmer.json": {
+    "mtime": 1745940482.3538806,
+    "seen": 1789899187.6746335,
+    "ast_hash": "94ae01433d6beef9005f43c0cfffbc0f",
+    "semantic_hash": "94ae01433d6beef9005f43c0cfffbc0f"
+  },
+  "elo_reports_pickup/player_performance_role_flex.json": {
+    "mtime": 1745940482.3548803,
+    "seen": 1789899187.6746335,
+    "ast_hash": "8dbfdf86af0b620e80cded0dff09edd8",
+    "semantic_hash": "8dbfdf86af0b620e80cded0dff09edd8"
+  },
+  "elo_reports_pickup/player_performance_role_support.json": {
+    "mtime": 1745940482.3548803,
+    "seen": 1789899187.6746335,
+    "ast_hash": "6512515e2a9ea944958aef080436a0ea",
+    "semantic_hash": "6512515e2a9ea944958aef080436a0ea"
+  },
+  "elo_reports_pickup/player_roles.json": {
+    "mtime": 1745940482.3558805,
+    "seen": 1789899187.6746335,
+    "ast_hash": "760a6707f2fbabe10dad243659dd9ced",
+    "semantic_hash": "760a6707f2fbabe10dad243659dd9ced"
+  },
+  "elo_reports_pickup/player_teams_roles.json": {
+    "mtime": 1745940482.3558805,
+    "seen": 1789899187.6746335,
+    "ast_hash": "d751713988987e9331980363e24189ce",
+    "semantic_hash": "d751713988987e9331980363e24189ce"
+  },
+  "elo_reports_pickup/role_distribution.json": {
+    "mtime": 1745940482.3568811,
+    "seen": 1789899187.6746335,
+    "ast_hash": "8061be6861a150d7c7ffeab065ca7c8a",
+    "semantic_hash": "8061be6861a150d7c7ffeab065ca7c8a"
+  },
+  "elo_reports_pickup/role_distribution_by_match_type.json": {
+    "mtime": 1745940482.3568811,
+    "seen": 1789899187.6746335,
+    "ast_hash": "3733e020abcfb60ec8a09741144230c1",
+    "semantic_hash": "3733e020abcfb60ec8a09741144230c1"
+  },
+  "env-setup.ps1": {
+    "mtime": 1745938017.965774,
+    "seen": 1789899187.6746335,
+    "ast_hash": "6eca74bc7c7dd164c49cb0f5963d6ba7",
+    "semantic_hash": "6eca74bc7c7dd164c49cb0f5963d6ba7"
+  },
+  "generate_player_roles_json.py": {
+    "mtime": 1745938017.965774,
+    "seen": 1789899187.6746335,
+    "ast_hash": "56d3a9cc9a07392908cfe75ce3b4a117",
+    "semantic_hash": "56d3a9cc9a07392908cfe75ce3b4a117"
+  },
+  "generate_role_reports.py": {
+    "mtime": 1745938017.9667742,
+    "seen": 1789899187.6746335,
+    "ast_hash": "4c97999062da0c308c9e02b2392ea3ef",
+    "semantic_hash": "4c97999062da0c308c9e02b2392ea3ef"
+  },
+  "host.json": {
+    "mtime": 1743594365.332453,
+    "seen": 1789899187.6746335,
+    "ast_hash": "b576c1b52591749dc7fe4bb027112010",
+    "semantic_hash": "b576c1b52591749dc7fe4bb027112010"
+  },
+  "ingestion/__init__.py": {
+    "mtime": 1785533780.6320548,
+    "seen": 1789899187.6746335,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "ingestion/extraction.py": {
+    "mtime": 1785533780.6320548,
+    "seen": 1789899187.6746335,
+    "ast_hash": "4b1b7955dcb4e87d86e97102e66c0abc",
+    "semantic_hash": "4b1b7955dcb4e87d86e97102e66c0abc"
+  },
+  "ingestion/webhook.py": {
+    "mtime": 1785787295.8099911,
+    "seen": 1789899187.6746335,
+    "ast_hash": "f5f9a7918714ed0a498987be850293a5",
+    "semantic_hash": "f5f9a7918714ed0a498987be850293a5"
+  },
+  "ingestion/workflow.py": {
+    "mtime": 1785787533.246317,
+    "seen": 1789899187.6746335,
+    "ast_hash": "b7e561a1b2f2671f82fe1edf0f797156",
+    "semantic_hash": "b7e561a1b2f2671f82fe1edf0f797156"
+  },
+  "process_with_roles.py": {
+    "mtime": 1745938017.9677742,
+    "seen": 1789899187.6746335,
+    "ast_hash": "131abe66b6ea528cf62c4946ec622d05",
+    "semantic_hash": "131abe66b6ea528cf62c4946ec622d05"
+  },
+  "score_extractor/__init__.py": {
+    "mtime": 1785536296.0369473,
+    "seen": 1789899187.6746335,
+    "ast_hash": "12249a62286600358907416c1a3d6f75",
+    "semantic_hash": "12249a62286600358907416c1a3d6f75"
+  },
+  "score_extractor/function.json": {
+    "mtime": 1743594328.1943204,
+    "seen": 1789899187.6746335,
+    "ast_hash": "6ec69c8bfa9fa2e89f0158ae1700e751",
+    "semantic_hash": "6ec69c8bfa9fa2e89f0158ae1700e751"
+  },
+  "score_extractor/season_processor.py": {
+    "mtime": 1745938017.9687743,
+    "seen": 1789899187.6746335,
+    "ast_hash": "c56d042820c3904ba48667992328d13d",
+    "semantic_hash": "c56d042820c3904ba48667992328d13d"
+  },
+  "score_extractor/test_extraction.py": {
+    "mtime": 1745938017.9697754,
+    "seen": 1789899187.6746335,
+    "ast_hash": "5a6af6b866f979f6b3a539586c16c5db",
+    "semantic_hash": "5a6af6b866f979f6b3a539586c16c5db"
+  },
+  "stats/__init__.py": {
+    "mtime": 1785533780.6330543,
+    "seen": 1789899187.6746335,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "stats/player_elo.py": {
+    "mtime": 1785787503.1288848,
+    "seen": 1789899187.6746335,
+    "ast_hash": "7eacf5a2594a10bfd818a5ebe8d8ec53",
+    "semantic_hash": "7eacf5a2594a10bfd818a5ebe8d8ec53"
+  },
+  "stats/team_elo.py": {
+    "mtime": 1785787491.1223786,
+    "seen": 1789899187.6746335,
+    "ast_hash": "560d72d5beb1647f5410ae28cc4bff13",
+    "semantic_hash": "560d72d5beb1647f5410ae28cc4bff13"
+  },
+  "stats_reader/__init__.py": {
+    "mtime": 1745938017.9717743,
+    "seen": 1789899187.6746335,
+    "ast_hash": "3f019f8d8a907f432d3e0efcdbf823ca",
+    "semantic_hash": "3f019f8d8a907f432d3e0efcdbf823ca"
+  },
+  "stats_reader/__main__.py": {
+    "mtime": 1745938017.9727745,
+    "seen": 1789899187.6746335,
+    "ast_hash": "b29b1e72b820967fe17f2fd28fde6065",
+    "semantic_hash": "b29b1e72b820967fe17f2fd28fde6065"
+  },
+  "stats_reader/check_player_match_data.py": {
+    "mtime": 1745938017.9727745,
+    "seen": 1789899187.6746335,
+    "ast_hash": "6d1e98160436f85706b5f79ab6e0bdf5",
+    "semantic_hash": "6d1e98160436f85706b5f79ab6e0bdf5"
+  },
+  "stats_reader/data_cleaner.py": {
+    "mtime": 1745938017.973774,
+    "seen": 1789899187.6746335,
+    "ast_hash": "56b795399ab575f2966278ed7778a988",
+    "semantic_hash": "56b795399ab575f2966278ed7778a988"
+  },
+  "stats_reader/elo_ladder.py": {
+    "mtime": 1745938017.973774,
+    "seen": 1789899187.6746335,
+    "ast_hash": "f902ed409147056b88b160f38923d24a",
+    "semantic_hash": "f902ed409147056b88b160f38923d24a"
+  },
+  "stats_reader/fix_pickup_team_ids.py": {
+    "mtime": 1745938017.9747744,
+    "seen": 1789899187.6746335,
+    "ast_hash": "a0f760ca4872001519a9cee6b5f1cf83",
+    "semantic_hash": "a0f760ca4872001519a9cee6b5f1cf83"
+  },
+  "stats_reader/interactive_player_management.py": {
+    "mtime": 1745938017.975774,
+    "seen": 1789899187.6746335,
+    "ast_hash": "b98cd54af872741ce53ac0b72ea2933a",
+    "semantic_hash": "b98cd54af872741ce53ac0b72ea2933a"
+  },
+  "stats_reader/modules/__init__.py": {
+    "mtime": 1745938017.975774,
+    "seen": 1789899187.6746335,
+    "ast_hash": "270f404bdb84b73ae1617ec7bc7f8409",
+    "semantic_hash": "270f404bdb84b73ae1617ec7bc7f8409"
+  },
+  "stats_reader/modules/database_utils.py": {
+    "mtime": 1745938017.9767766,
+    "seen": 1789899187.6746335,
+    "ast_hash": "4bed71eca119bbfb2a52338cfbdaa04c",
+    "semantic_hash": "4bed71eca119bbfb2a52338cfbdaa04c"
+  },
+  "stats_reader/modules/database_utils_update.py": {
+    "mtime": 1745938017.9767766,
+    "seen": 1789899187.6746335,
+    "ast_hash": "97d2a33956f83fbaf1048b80f641013f",
+    "semantic_hash": "97d2a33956f83fbaf1048b80f641013f"
+  },
+  "stats_reader/modules/match_processor.py": {
+    "mtime": 1745938017.9777734,
+    "seen": 1789899187.6746335,
+    "ast_hash": "3f872e5a5b12862c48f3000184036363",
+    "semantic_hash": "3f872e5a5b12862c48f3000184036363"
+  },
+  "stats_reader/modules/player_processor.py": {
+    "mtime": 1745938017.9777734,
+    "seen": 1789899187.6746335,
+    "ast_hash": "ce33a273f37567ee3bab274a42dba6d0",
+    "semantic_hash": "ce33a273f37567ee3bab274a42dba6d0"
+  },
+  "stats_reader/modules/player_processor_update.py": {
+    "mtime": 1745938017.9777734,
+    "seen": 1789899187.6746335,
+    "ast_hash": "18b7b92fd67f9a0b6435be64fb72c96d",
+    "semantic_hash": "18b7b92fd67f9a0b6435be64fb72c96d"
+  },
+  "stats_reader/modules/report_generator.py": {
+    "mtime": 1745938017.9787748,
+    "seen": 1789899187.6746335,
+    "ast_hash": "56cb4f8f0e39aa66013b6f93b364762b",
+    "semantic_hash": "56cb4f8f0e39aa66013b6f93b364762b"
+  },
+  "stats_reader/modules/report_generator_update.py": {
+    "mtime": 1745938017.9787748,
+    "seen": 1789899187.6746335,
+    "ast_hash": "266a0767425cffbf8fe27f3e2df92ed1",
+    "semantic_hash": "266a0767425cffbf8fe27f3e2df92ed1"
+  },
+  "stats_reader/player_elo_ladder.py": {
+    "mtime": 1745938017.9797733,
+    "seen": 1789899187.6746335,
+    "ast_hash": "250ff88af1e8a89b046d0fe36eae54c4",
+    "semantic_hash": "250ff88af1e8a89b046d0fe36eae54c4"
+  },
+  "stats_reader/reference_manager.py": {
+    "mtime": 1745938017.9797733,
+    "seen": 1789899187.6746335,
+    "ast_hash": "4699342ddfa651f4aea5908ecb16924f",
+    "semantic_hash": "4699342ddfa651f4aea5908ecb16924f"
+  },
+  "stats_reader/reference_manager_functions.py": {
+    "mtime": 1745938017.980775,
+    "seen": 1789899187.6746335,
+    "ast_hash": "9adeb23606fd3d51ff1296e86e7540ef",
+    "semantic_hash": "9adeb23606fd3d51ff1296e86e7540ef"
+  },
+  "stats_reader/role_elo_calculator.py": {
+    "mtime": 1745938017.980775,
+    "seen": 1789899187.6746335,
+    "ast_hash": "ece543b1358e3c1ee5fa614644da7de3",
+    "semantic_hash": "ece543b1358e3c1ee5fa614644da7de3"
+  },
+  "stats_reader/set_all_match_types.py": {
+    "mtime": 1745938017.9817753,
+    "seen": 1789899187.6746335,
+    "ast_hash": "585a4dd461ad0508076be7d9c969f74a",
+    "semantic_hash": "585a4dd461ad0508076be7d9c969f74a"
+  },
+  "stats_reader/stats_db_processor_direct.py": {
+    "mtime": 1745938017.9817753,
+    "seen": 1789899187.6746335,
+    "ast_hash": "76533fc3b2aeccda7fbad6d8ac8321db",
+    "semantic_hash": "76533fc3b2aeccda7fbad6d8ac8321db"
+  },
+  "stats_reader/test_elo_ladder.py": {
+    "mtime": 1745938017.982776,
+    "seen": 1789899187.6746335,
+    "ast_hash": "ebc15e96717fdb8e408fca9ff7222455",
+    "semantic_hash": "ebc15e96717fdb8e408fca9ff7222455"
+  },
+  "stats_reader/update_match_types.py": {
+    "mtime": 1745938017.982776,
+    "seen": 1789899187.6746335,
+    "ast_hash": "ddbaeae5bd7e2026d0bf3ffdd464e3ec",
+    "semantic_hash": "ddbaeae5bd7e2026d0bf3ffdd464e3ec"
+  },
+  "stats_reports/elo_history_team.json": {
+    "mtime": 1745940482.3578818,
+    "seen": 1789899187.6746335,
+    "ast_hash": "643d222922a9b68c3a172d736280b698",
+    "semantic_hash": "643d222922a9b68c3a172d736280b698"
+  },
+  "stats_reports/elo_ladder_team.json": {
+    "mtime": 1745938017.9837754,
+    "seen": 1789899187.6746335,
+    "ast_hash": "d5906fb58704f220895a15cff2f85602",
+    "semantic_hash": "d5906fb58704f220895a15cff2f85602"
+  },
+  "stats_reports/faction_win_rates.json": {
+    "mtime": 1745940482.3578818,
+    "seen": 1789899187.6746335,
+    "ast_hash": "e4733110c092fb533593e250fb3cdd98",
+    "semantic_hash": "e4733110c092fb533593e250fb3cdd98"
+  },
+  "stats_reports/player_performance.json": {
+    "mtime": 1745940482.3578818,
+    "seen": 1789899187.6746335,
+    "ast_hash": "962b5199e81d7fb664b44374c63a56d5",
+    "semantic_hash": "962b5199e81d7fb664b44374c63a56d5"
+  },
+  "stats_reports/player_performance_no_subs.json": {
+    "mtime": 1745940482.3588817,
+    "seen": 1789899187.6746335,
+    "ast_hash": "b2929cf24930ae708ee834d9580cfed9",
+    "semantic_hash": "b2929cf24930ae708ee834d9580cfed9"
+  },
+  "stats_reports/player_performance_pickup.json": {
+    "mtime": 1745940482.3588817,
+    "seen": 1789899187.6746335,
+    "ast_hash": "962b5199e81d7fb664b44374c63a56d5",
+    "semantic_hash": "962b5199e81d7fb664b44374c63a56d5"
+  },
+  "stats_reports/player_performance_pickup_role_farmer.json": {
+    "mtime": 1745940482.3598807,
+    "seen": 1789899187.6746335,
+    "ast_hash": "94ae01433d6beef9005f43c0cfffbc0f",
+    "semantic_hash": "94ae01433d6beef9005f43c0cfffbc0f"
+  },
+  "stats_reports/player_performance_pickup_role_flex.json": {
+    "mtime": 1745940482.3598807,
+    "seen": 1789899187.6746335,
+    "ast_hash": "8dbfdf86af0b620e80cded0dff09edd8",
+    "semantic_hash": "8dbfdf86af0b620e80cded0dff09edd8"
+  },
+  "stats_reports/player_performance_pickup_role_support.json": {
+    "mtime": 1745940482.3608806,
+    "seen": 1789899187.6746335,
+    "ast_hash": "6512515e2a9ea944958aef080436a0ea",
+    "semantic_hash": "6512515e2a9ea944958aef080436a0ea"
+  },
+  "stats_reports/player_performance_role_farmer.json": {
+    "mtime": 1745940482.3608806,
+    "seen": 1789899187.6746335,
+    "ast_hash": "94ae01433d6beef9005f43c0cfffbc0f",
+    "semantic_hash": "94ae01433d6beef9005f43c0cfffbc0f"
+  },
+  "stats_reports/player_performance_role_flex.json": {
+    "mtime": 1745940482.3608806,
+    "seen": 1789899187.6746335,
+    "ast_hash": "8dbfdf86af0b620e80cded0dff09edd8",
+    "semantic_hash": "8dbfdf86af0b620e80cded0dff09edd8"
+  },
+  "stats_reports/player_performance_role_support.json": {
+    "mtime": 1745940482.3618803,
+    "seen": 1789899187.6746335,
+    "ast_hash": "6512515e2a9ea944958aef080436a0ea",
+    "semantic_hash": "6512515e2a9ea944958aef080436a0ea"
+  },
+  "stats_reports/player_performance_team_role_farmer.json": {
+    "mtime": 1745940482.3618803,
+    "seen": 1789899187.6746335,
+    "ast_hash": "378baa96c9274a9798f041e8d8adce89",
+    "semantic_hash": "378baa96c9274a9798f041e8d8adce89"
+  },
+  "stats_reports/player_performance_team_role_flex.json": {
+    "mtime": 1745940482.3628817,
+    "seen": 1789899187.6746335,
+    "ast_hash": "71b43e4378a8b34ba487485bec02fa48",
+    "semantic_hash": "71b43e4378a8b34ba487485bec02fa48"
+  },
+  "stats_reports/player_performance_team_role_support.json": {
+    "mtime": 1745940482.3628817,
+    "seen": 1789899187.6746335,
+    "ast_hash": "5f2324a477700b95a3958361e8f61b43",
+    "semantic_hash": "5f2324a477700b95a3958361e8f61b43"
+  },
+  "stats_reports/player_roles.json": {
+    "mtime": 1745940482.3638806,
+    "seen": 1789899187.6746335,
+    "ast_hash": "7715a48e4f2169a4dd2a254e6ed8c79f",
+    "semantic_hash": "7715a48e4f2169a4dd2a254e6ed8c79f"
+  },
+  "stats_reports/player_teams.json": {
+    "mtime": 1745940482.3638806,
+    "seen": 1789899187.6746335,
+    "ast_hash": "d751713988987e9331980363e24189ce",
+    "semantic_hash": "d751713988987e9331980363e24189ce"
+  },
+  "stats_reports/player_teams_roles.json": {
+    "mtime": 1745940482.3638806,
+    "seen": 1789899187.6746335,
+    "ast_hash": "8a50a559b73d6b9021a810f787fe8a01",
+    "semantic_hash": "8a50a559b73d6b9021a810f787fe8a01"
+  },
+  "stats_reports/role_distribution.json": {
+    "mtime": 1745940482.3648808,
+    "seen": 1789899187.6746335,
+    "ast_hash": "8061be6861a150d7c7ffeab065ca7c8a",
+    "semantic_hash": "8061be6861a150d7c7ffeab065ca7c8a"
+  },
+  "stats_reports/role_distribution_by_match_type.json": {
+    "mtime": 1745940482.3648808,
+    "seen": 1789899187.6746335,
+    "ast_hash": "3733e020abcfb60ec8a09741144230c1",
+    "semantic_hash": "3733e020abcfb60ec8a09741144230c1"
+  },
+  "stats_reports/season_summary.json": {
+    "mtime": 1745940482.3648808,
+    "seen": 1789899187.6746335,
+    "ast_hash": "36717ff9b1a6a2bb53c5cf86badb1a8d",
+    "semantic_hash": "36717ff9b1a6a2bb53c5cf86badb1a8d"
+  },
+  "stats_reports/subbing_report.json": {
+    "mtime": 1745940482.3658812,
+    "seen": 1789899187.6746335,
+    "ast_hash": "d751713988987e9331980363e24189ce",
+    "semantic_hash": "d751713988987e9331980363e24189ce"
+  },
+  "stats_reports/team_standings.json": {
+    "mtime": 1745940482.3658812,
+    "seen": 1789899187.6746335,
+    "ast_hash": "5fd09b557db4998ad0bcf7cba6b81d9f",
+    "semantic_hash": "5fd09b557db4998ad0bcf7cba6b81d9f"
+  },
+  "teams/__init__.py": {
+    "mtime": 1785533780.6350548,
+    "seen": 1789899187.6746335,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "teams/onboarding.py": {
+    "mtime": 1787003834.80596,
+    "seen": 1789899187.6746335,
+    "ast_hash": "151e068e97994768e97f10e9d9f9cfe6",
+    "semantic_hash": "151e068e97994768e97f10e9d9f9cfe6"
+  },
+  "tests/api/conftest.py": {
+    "mtime": 1785787424.2804067,
+    "seen": 1789899187.6746335,
+    "ast_hash": "721457bd088ebbdd65ef8ac024aea183",
+    "semantic_hash": "721457bd088ebbdd65ef8ac024aea183"
+  },
+  "tests/api/test_matches.py": {
+    "mtime": 1785627347.5190432,
+    "seen": 1789899187.6746335,
+    "ast_hash": "ba906a9171c60f937cde706df875ef52",
+    "semantic_hash": "ba906a9171c60f937cde706df875ef52"
+  },
+  "tests/api/test_reads.py": {
+    "mtime": 1785787450.5932803,
+    "seen": 1789899187.6746335,
+    "ast_hash": "f91ba8976b829798ce16bf040c939f8c",
+    "semantic_hash": "f91ba8976b829798ce16bf040c939f8c"
+  },
+  "tests/api/test_teams.py": {
+    "mtime": 1787003909.7068777,
+    "seen": 1789899187.6746335,
+    "ast_hash": "5aa05a49cca58f05ee55a84fb510e3fe",
+    "semantic_hash": "5aa05a49cca58f05ee55a84fb510e3fe"
+  },
+  "tests/bot/test_backend_client.py": {
+    "mtime": 1787003916.6114242,
+    "seen": 1789899187.6746335,
+    "ast_hash": "023814d71b762790c6c10bff765578e6",
+    "semantic_hash": "023814d71b762790c6c10bff765578e6"
+  },
+  "tests/bot/test_conversation.py": {
+    "mtime": 1785630382.0462587,
+    "seen": 1789899187.6746335,
+    "ast_hash": "1d76d0f3acd51d1565a85f36be16de0d",
+    "semantic_hash": "1d76d0f3acd51d1565a85f36be16de0d"
+  },
+  "tests/conftest.py": {
+    "mtime": 1786132831.6638908,
+    "seen": 1789899187.6746335,
+    "ast_hash": "66562550f0a9b8030be7d020ae041944",
+    "semantic_hash": "66562550f0a9b8030be7d020ae041944"
+  },
+  "tests/db/test_pending_matches.py": {
+    "mtime": 1785541251.8060174,
+    "seen": 1789899187.6746335,
+    "ast_hash": "87ab06fa6faf4089939df7aad5ee72b2",
+    "semantic_hash": "87ab06fa6faf4089939df7aad5ee72b2"
+  },
+  "tests/db/test_schema_migration.py": {
+    "mtime": 1785533780.6380541,
+    "seen": 1789899187.6746335,
+    "ast_hash": "5d2d20ded18dd98aa6cfabbdc883ba85",
+    "semantic_hash": "5d2d20ded18dd98aa6cfabbdc883ba85"
+  },
+  "tests/db/test_sqlite_migration.py": {
+    "mtime": 1785533780.6380541,
+    "seen": 1789899187.6746335,
+    "ast_hash": "bb66a30dc7a6deeae0e707527e946956",
+    "semantic_hash": "bb66a30dc7a6deeae0e707527e946956"
+  },
+  "tests/ingestion/test_extraction.py": {
+    "mtime": 1785533780.6380541,
+    "seen": 1789899187.6746335,
+    "ast_hash": "d3e1a962bed1e58dc79dffd53e2dae22",
+    "semantic_hash": "d3e1a962bed1e58dc79dffd53e2dae22"
+  },
+  "tests/ingestion/test_webhook.py": {
+    "mtime": 1785787472.8338158,
+    "seen": 1789899187.6746335,
+    "ast_hash": "e6ffbcdea662100e3c06c41d5b51c59c",
+    "semantic_hash": "e6ffbcdea662100e3c06c41d5b51c59c"
+  },
+  "tests/ingestion/test_workflow.py": {
+    "mtime": 1785787398.0061784,
+    "seen": 1789899187.6746335,
+    "ast_hash": "4cbef5244918993fcba7aadc7093c9a5",
+    "semantic_hash": "4cbef5244918993fcba7aadc7093c9a5"
+  },
+  "tests/stats/test_player_elo.py": {
+    "mtime": 1785533780.6390538,
+    "seen": 1789899187.6746335,
+    "ast_hash": "bffb050cb8fde2938af690ec805e432e",
+    "semantic_hash": "bffb050cb8fde2938af690ec805e432e"
+  },
+  "tests/stats/test_team_elo.py": {
+    "mtime": 1785533780.6400535,
+    "seen": 1789899187.6746335,
+    "ast_hash": "c8cf219ed974cd249a2d454df3a57b22",
+    "semantic_hash": "c8cf219ed974cd249a2d454df3a57b22"
+  },
+  "tests/teams/test_onboarding.py": {
+    "mtime": 1785533780.6400535,
+    "seen": 1789899187.6746335,
+    "ast_hash": "6c2235c065617dd54eab80e07fbee44f",
+    "semantic_hash": "6c2235c065617dd54eab80e07fbee44f"
+  },
+  "tests/test_data/all_seasons_data_test.json": {
+    "mtime": 1745938017.9847746,
+    "seen": 1789899187.6746335,
+    "ast_hash": "535ef06035ea34d94c88cc89cabaf7c7",
+    "semantic_hash": "535ef06035ea34d94c88cc89cabaf7c7"
+  },
+  "tests/test_reference_data.json": {
+    "mtime": 1745938017.985776,
+    "seen": 1789899187.6746335,
+    "ast_hash": "e5d3ab3b905f8580ba2f26b11d4fea66",
+    "semantic_hash": "e5d3ab3b905f8580ba2f26b11d4fea66"
+  },
+  "tests/test_score_extractor.py": {
+    "mtime": 1745938017.985776,
+    "seen": 1789899187.6746335,
+    "ast_hash": "7b084588063b41fe95006940d4e27fb1",
+    "semantic_hash": "7b084588063b41fe95006940d4e27fb1"
+  },
+  "tests/test_stats_reader.py": {
+    "mtime": 1745938017.986775,
+    "seen": 1789899187.6746335,
+    "ast_hash": "00545dd996327968292e8ab11aff8d73",
+    "semantic_hash": "00545dd996327968292e8ab11aff8d73"
+  },
+  "utilities/scan_screenshots.py": {
+    "mtime": 1745938017.9877746,
+    "seen": 1789899187.6746335,
+    "ast_hash": "9c42235c09d15abb26d771adf1de83bc",
+    "semantic_hash": "9c42235c09d15abb26d771adf1de83bc"
+  },
+  "utilities/update_paths.py": {
+    "mtime": 1745938017.9877746,
+    "seen": 1789899187.6746335,
+    "ast_hash": "2b912e11bae21a8713ef5cdde83a4b4f",
+    "semantic_hash": "2b912e11bae21a8713ef5cdde83a4b4f"
+  },
+  "web_visualizations/js/chartInteractivity.js": {
+    "mtime": 1745938018.0537753,
+    "seen": 1789899187.6746335,
+    "ast_hash": "00b7fd54c1eed10203233baa17c0950c",
+    "semantic_hash": "00b7fd54c1eed10203233baa17c0950c"
+  },
+  "web_visualizations/js/dataMock.js": {
+    "mtime": 1745938018.0547748,
+    "seen": 1789899187.6746335,
+    "ast_hash": "4d1de27faf8e767f1d26a39e556b9fd7",
+    "semantic_hash": "4d1de27faf8e767f1d26a39e556b9fd7"
+  },
+  "web_visualizations/js/floating-logos.js": {
+    "mtime": 1745938018.0547748,
+    "seen": 1789899187.6746335,
+    "ast_hash": "12e5a152edc709a0a0fb9226dc8b8bf1",
+    "semantic_hash": "12e5a152edc709a0a0fb9226dc8b8bf1"
+  },
+  "web_visualizations/js/leaderboardManager.js": {
+    "mtime": 1745938018.0557752,
+    "seen": 1789899187.6746335,
+    "ast_hash": "a841df44ecd0a609d944d871f1c4c8d5",
+    "semantic_hash": "a841df44ecd0a609d944d871f1c4c8d5"
+  },
+  "web_visualizations/js/nomodule-fallback.js": {
+    "mtime": 1745938018.0557752,
+    "seen": 1789899187.6746335,
+    "ast_hash": "7bf1287575b462a58e404e9e6fa71cce",
+    "semantic_hash": "7bf1287575b462a58e404e9e6fa71cce"
+  },
+  "web_visualizations/js/pickup_page.js": {
+    "mtime": 1745938018.0567746,
+    "seen": 1789899187.6746335,
+    "ast_hash": "dc8c2ba23993cc6e949513b2c93fffe5",
+    "semantic_hash": "dc8c2ba23993cc6e949513b2c93fffe5"
+  },
+  "web_visualizations/js/realdata_fixed.js": {
+    "mtime": 1745943362.0193872,
+    "seen": 1789899187.6746335,
+    "ast_hash": "c9e3a846a5f32e268c5e4e4184e4a025",
+    "semantic_hash": "c9e3a846a5f32e268c5e4e4184e4a025"
+  },
+  "web_visualizations/js/remove-search.js": {
+    "mtime": 1745938018.057774,
+    "seen": 1789899187.6746335,
+    "ast_hash": "35d4d5b21511a30e5b9e8791d43662ee",
+    "semantic_hash": "35d4d5b21511a30e5b9e8791d43662ee"
+  },
+  "web_visualizations/js/tableInteractivity.js": {
+    "mtime": 1745938018.057774,
+    "seen": 1789899187.6746335,
+    "ast_hash": "e3f7c76a6799884f5aa8e23f508d226d",
+    "semantic_hash": "e3f7c76a6799884f5aa8e23f508d226d"
+  },
+  "web_visualizations/js/team-role-filter.js": {
+    "mtime": 1745938018.0587742,
+    "seen": 1789899187.6746335,
+    "ast_hash": "275f86fbe80b47b35f0c09954782ec13",
+    "semantic_hash": "275f86fbe80b47b35f0c09954782ec13"
+  },
+  "web_visualizations/js/team_page.js": {
+    "mtime": 1745938018.0587742,
+    "seen": 1789899187.6746335,
+    "ast_hash": "9ce1f7d3f316f1f0f7ec718ff3a9ec55",
+    "semantic_hash": "9ce1f7d3f316f1f0f7ec718ff3a9ec55"
+  },
+  "web_visualizations/script.js": {
+    "mtime": 1745938018.059774,
+    "seen": 1789899187.6746335,
+    "ast_hash": "9486662f6b97c3a75e9f4e260afb34bb",
+    "semantic_hash": "9486662f6b97c3a75e9f4e260afb34bb"
+  },
+  "web_visualizations/star-wars-theme.js": {
+    "mtime": 1745938018.0607743,
+    "seen": 1789899187.6746335,
+    "ast_hash": "dd327a9f53e4d6403e0750298685957b",
+    "semantic_hash": "dd327a9f53e4d6403e0750298685957b"
+  },
+  ".github/workflows/static.yml": {
+    "mtime": 1745941690.1642034,
+    "seen": 1789899187.6746335,
+    "ast_hash": "85047740c067fa815c75897b575a93db",
+    "semantic_hash": "85047740c067fa815c75897b575a93db"
+  },
+  "CONTEXT.md": {
+    "mtime": 1785533780.617453,
+    "seen": 1789899187.6746335,
+    "ast_hash": "ea134bf33f2559fda4bbdbd8b5cf7567",
+    "semantic_hash": "ea134bf33f2559fda4bbdbd8b5cf7567"
+  },
+  "PRD_frontend.md": {
+    "mtime": 1745938017.9627745,
+    "seen": 1789899187.6746335,
+    "ast_hash": "fab764c9993fa12feedfc8e873b2efa6",
+    "semantic_hash": "fab764c9993fa12feedfc8e873b2efa6"
+  },
+  "README.md": {
+    "mtime": 1786132835.119254,
+    "seen": 1789899187.6746335,
+    "ast_hash": "4a73bf8edbc08aaa921db3fa69679738",
+    "semantic_hash": "4a73bf8edbc08aaa921db3fa69679738"
+  },
+  "ROADMAP.md": {
+    "mtime": 1785787977.9349804,
+    "seen": 1789899187.6746335,
+    "ast_hash": "7dc7e9540f9db72edc27b2701e5800f6",
+    "semantic_hash": "7dc7e9540f9db72edc27b2701e5800f6"
+  },
+  "ROLE_IMPLEMENTATION_SUMMARY.md": {
+    "mtime": 1745938017.9637733,
+    "seen": 1789899187.6746335,
+    "ast_hash": "f5903b8f2cba1483bbe2c4917446a52b",
+    "semantic_hash": "f5903b8f2cba1483bbe2c4917446a52b"
+  },
+  "TESTING_QUICKSTART.md": {
+    "mtime": 1786486356.377331,
+    "seen": 1789899187.6746335,
+    "ast_hash": "ac9279e99e7a018ff3c41db92fc29e51",
+    "semantic_hash": "ac9279e99e7a018ff3c41db92fc29e51"
+  },
+  "docker-compose.yml": {
+    "mtime": 1786132822.4265866,
+    "seen": 1789899187.6746335,
+    "ast_hash": "3b0383aaaff326e6d048f07978bdcd1b",
+    "semantic_hash": "3b0383aaaff326e6d048f07978bdcd1b"
+  },
+  "docs/adr/0001-discord-bot-split-and-push-notification.md": {
+    "mtime": 1785533780.628454,
+    "seen": 1789899187.6746335,
+    "ast_hash": "5a899b84822b812b84c12a36e02c624d",
+    "semantic_hash": "5a899b84822b812b84c12a36e02c624d"
+  },
+  "docs/adr/0002-discord-mediated-ambiguity-resolution.md": {
+    "mtime": 1785533780.628454,
+    "seen": 1789899187.6746335,
+    "ast_hash": "ed675e963e6d98dcc151001e08730e28",
+    "semantic_hash": "ed675e963e6d98dcc151001e08730e28"
+  },
+  "docs/adr/0003-postgres-as-shared-store.md": {
+    "mtime": 1785533780.6294534,
+    "seen": 1789899187.6746335,
+    "ast_hash": "4e0b47e2902c51fa33d4840d5ca2c52e",
+    "semantic_hash": "4e0b47e2902c51fa33d4840d5ca2c52e"
+  },
+  "docs/adr/0004-coarse-grained-service-split.md": {
+    "mtime": 1785533780.6294534,
+    "seen": 1789899187.6746335,
+    "ast_hash": "4ffff4418a6a198684e6ed28012b3b9c",
+    "semantic_hash": "4ffff4418a6a198684e6ed28012b3b9c"
+  },
+  "docs/adr/0005-backend-owned-ingestion-workflow.md": {
+    "mtime": 1785533780.6300757,
+    "seen": 1789899187.6746335,
+    "ast_hash": "7934317bde1eeded4f0128a8e91edabf",
+    "semantic_hash": "7934317bde1eeded4f0128a8e91edabf"
+  },
+  "docs/adr/0006-dedicated-postgres-instance.md": {
+    "mtime": 1785533780.6300757,
+    "seen": 1789899187.6746335,
+    "ast_hash": "e018eb86bcabefb804469c0d98365c5f",
+    "semantic_hash": "e018eb86bcabefb804469c0d98365c5f"
+  },
+  "docs/adr/0007-campaign-scoped-matches-and-elo.md": {
+    "mtime": 1785533780.6310537,
+    "seen": 1789899187.6746335,
+    "ast_hash": "a2e4d1ad5f3d61fa6835f2a42d20ff8c",
+    "semantic_hash": "a2e4d1ad5f3d61fa6835f2a42d20ff8c"
+  },
+  "docs/adr/0008-captain-and-admin-authorization.md": {
+    "mtime": 1785533780.6310537,
+    "seen": 1789899187.6746335,
+    "ast_hash": "c33a03d396f8828d698fe8fa0e14d46d",
+    "semantic_hash": "c33a03d396f8828d698fe8fa0e14d46d"
+  },
+  "docs/campaign-integration.md": {
+    "mtime": 1785788254.1081657,
+    "seen": 1789899187.6746335,
+    "ast_hash": "dbfbbf665f129d35d0c6f7d68db1a7ca",
+    "semantic_hash": "dbfbbf665f129d35d0c6f7d68db1a7ca"
+  },
+  "example multiple image prompt.txt": {
+    "mtime": 1743596874.7146816,
+    "seen": 1789899187.6746335,
+    "ast_hash": "1e958f54c35506ca3d830340a9d4f182",
+    "semantic_hash": "1e958f54c35506ca3d830340a9d4f182"
+  },
+  "prd.md": {
+    "mtime": 1745938017.9667742,
+    "seen": 1789899187.6746335,
+    "ast_hash": "c8b0c7b8d18d178870ca26e8383e5b43",
+    "semantic_hash": "c8b0c7b8d18d178870ca26e8383e5b43"
+  },
+  "requirements.txt": {
+    "mtime": 1785535586.1501648,
+    "seen": 1789899187.6746335,
+    "ast_hash": "e4f9437c3af2c992b377cf843c049007",
+    "semantic_hash": "e4f9437c3af2c992b377cf843c049007"
+  },
+  "stats_reader/ELO_LADDER_README.md": {
+    "mtime": 1745938017.9707742,
+    "seen": 1789899187.6746335,
+    "ast_hash": "6c755ac6e0060c2804b181da5c5f7833",
+    "semantic_hash": "6c755ac6e0060c2804b181da5c5f7833"
+  },
+  "stats_reader/README.md": {
+    "mtime": 1745938017.9717743,
+    "seen": 1789899187.6746335,
+    "ast_hash": "9b50e8118463e3faa386676624130185",
+    "semantic_hash": "9b50e8118463e3faa386676624130185"
+  },
+  "stats_reader/import_statement.txt": {
+    "mtime": 1745938017.9747744,
+    "seen": 1789899187.6746335,
+    "ast_hash": "92d138ba8da8527290ffa501faf10141",
+    "semantic_hash": "92d138ba8da8527290ffa501faf10141"
+  },
+  "tests/README.md": {
+    "mtime": 1745938017.9847746,
+    "seen": 1789899187.6746335,
+    "ast_hash": "ae461d8a8b56750398fcb96e523e7d00",
+    "semantic_hash": "ae461d8a8b56750398fcb96e523e7d00"
+  },
+  "utilities/README.md": {
+    "mtime": 1745938017.986775,
+    "seen": 1789899187.6746335,
+    "ast_hash": "a21d07063b13c199bff610dc8937d46a",
+    "semantic_hash": "a21d07063b13c199bff610dc8937d46a"
+  },
+  "web_visualizations/README.md": {
+    "mtime": 1745938017.9887743,
+    "seen": 1789899187.6746335,
+    "ast_hash": "d83bac2941fc60e13eea557539486860",
+    "semantic_hash": "d83bac2941fc60e13eea557539486860"
+  },
+  "web_visualizations/debug.html": {
+    "mtime": 1745938017.9887743,
+    "seen": 1789899187.6746335,
+    "ast_hash": "1874ca3753abbf460ed699e377bee578",
+    "semantic_hash": "1874ca3753abbf460ed699e377bee578"
+  },
+  "web_visualizations/index.html": {
+    "mtime": 1745938018.0537753,
+    "seen": 1789899187.6746335,
+    "ast_hash": "ac34cdc39b4503cb7cbffab484ae038e",
+    "semantic_hash": "ac34cdc39b4503cb7cbffab484ae038e"
+  },
+  "web_visualizations/pickup.html": {
+    "mtime": 1745938018.059774,
+    "seen": 1789899187.6746335,
+    "ast_hash": "e8cefe000aa52126787e848c70ce9684",
+    "semantic_hash": "e8cefe000aa52126787e848c70ce9684"
+  },
+  "web_visualizations/team.html": {
+    "mtime": 1785533780.6410549,
+    "seen": 1789899187.6746335,
+    "ast_hash": "b7c2292e78609f4d9d4ad85ba1ccca2f",
+    "semantic_hash": "b7c2292e78609f4d9d4ad85ba1ccca2f"
+  },
+  "web_visualizations/images/Death Star.png": {
+    "mtime": 1745938018.0037768,
+    "seen": 1789899187.6746335,
+    "ast_hash": "93a1b5dde9dc8fd4db970fa8539263fd",
+    "semantic_hash": "93a1b5dde9dc8fd4db970fa8539263fd"
+  },
+  "web_visualizations/images/Idiots_Array.png": {
+    "mtime": 1745938018.005804,
+    "seen": 1789899187.6746335,
+    "ast_hash": "077245e76ef424734427c515bfe99034",
+    "semantic_hash": "077245e76ef424734427c515bfe99034"
+  },
+  "web_visualizations/images/LSS_Black_Sabacc_logo_O_5000px_FINAL.png": {
+    "mtime": 1745938018.022774,
+    "seen": 1789899187.6746335,
+    "ast_hash": "c0ba2d2f55803ff0c7ff432e9bbeca8b",
+    "semantic_hash": "c0ba2d2f55803ff0c7ff432e9bbeca8b"
+  },
+  "web_visualizations/images/Remnant Squadron Gold Stars.png": {
+    "mtime": 1745938018.0268059,
+    "seen": 1789899187.6746335,
+    "ast_hash": "4d375a66c0735fc23af5de0d7ec59ca9",
+    "semantic_hash": "4d375a66c0735fc23af5de0d7ec59ca9"
+  },
+  "web_visualizations/images/TRA.png": {
+    "mtime": 1745938018.0308092,
+    "seen": 1789899187.6746335,
+    "ast_hash": "e0c64bb249d40fd57458db67a091fc1e",
+    "semantic_hash": "e0c64bb249d40fd57458db67a091fc1e"
+  },
+  "web_visualizations/images/cavern-angels-blue-squadron.png": {
+    "mtime": 1745938018.0317752,
+    "seen": 1789899187.6746335,
+    "ast_hash": "d7fb89aec390416356183c55b238ecb5",
+    "semantic_hash": "d7fb89aec390416356183c55b238ecb5"
+  },
+  "web_visualizations/images/gray-hell-porgs.png": {
+    "mtime": 1745938018.0328045,
+    "seen": 1789899187.6746335,
+    "ast_hash": "cf23bef778da62a8c478a7869b6ac0b8",
+    "semantic_hash": "cf23bef778da62a8c478a7869b6ac0b8"
+  },
+  "web_visualizations/images/hive-guard.png": {
+    "mtime": 1745938018.0337749,
+    "seen": 1789899187.6746335,
+    "ast_hash": "8ec85e7c9e0dc2ba3d728cf410569782",
+    "semantic_hash": "8ec85e7c9e0dc2ba3d728cf410569782"
+  },
+  "web_visualizations/images/kintan.png": {
+    "mtime": 1745938018.0388036,
+    "seen": 1789899187.6746335,
+    "ast_hash": "78b92ab809667a38fe497c0cfba7679c",
+    "semantic_hash": "78b92ab809667a38fe497c0cfba7679c"
+  },
+  "web_visualizations/images/sabacc_emblem.png": {
+    "mtime": 1745938018.0418036,
+    "seen": 1789899187.6746335,
+    "ast_hash": "93e2ef5b287a13e3b6e011e638a9530a",
+    "semantic_hash": "93e2ef5b287a13e3b6e011e638a9530a"
+  },
+  "web_visualizations/images/siren3.png": {
+    "mtime": 1745938018.0478046,
+    "seen": 1789899187.6746335,
+    "ast_hash": "dea62766783dfbd61e2c43bcb8e6f84f",
+    "semantic_hash": "dea62766783dfbd61e2c43bcb8e6f84f"
+  },
+  "web_visualizations/images/tangerine-squadron.png": {
+    "mtime": 1745938018.0488157,
+    "seen": 1789899187.6746335,
+    "ast_hash": "4863f2e4b6a0a24b33ce3995cc5d3d3b",
+    "semantic_hash": "4863f2e4b6a0a24b33ce3995cc5d3d3b"
+  },
+  "web_visualizations/images/the-randolorians.png": {
+    "mtime": 1745938018.049775,
+    "seen": 1789899187.6746335,
+    "ast_hash": "e8680e6a4ce0825481bc886f40c1bd62",
+    "semantic_hash": "e8680e6a4ce0825481bc886f40c1bd62"
+  },
+  "web_visualizations/images/tiefighter.png": {
+    "mtime": 1745938018.0508037,
+    "seen": 1789899187.6746335,
+    "ast_hash": "0af31948d11efcbbae247e54be1bfd93",
+    "semantic_hash": "0af31948d11efcbbae247e54be1bfd93"
+  },
+  "web_visualizations/images/xwing.png": {
+    "mtime": 1745938018.0528035,
+    "seen": 1789899187.6746335,
+    "ast_hash": "9bbde7b991310699512fb574d2d90baa",
+    "semantic_hash": "9bbde7b991310699512fb574d2d90baa"
+  }
+}

@@ -1,0 +1,120 @@
+from db.migrate_runner import apply_schema
+
+
+def test_create_team_then_list_and_get(pg_conn, client, campaign_headers):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    response = client.post("/teams", json={"name": "Rogue Squadron"})
+    assert response.status_code == 200
+    team = response.json()
+    assert team["name"] == "Rogue Squadron"
+
+    listed = client.get("/teams", headers=campaign_headers).json()
+    assert [t["name"] for t in listed] == ["Rogue Squadron"]
+
+    fetched = client.get(f"/teams/{team['id']}", headers=campaign_headers).json()
+    assert fetched["id"] == team["id"]
+
+
+def test_create_team_with_faction_round_trips_through_list_and_get(pg_conn, client, campaign_headers):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    response = client.post("/teams", json={"name": "Imperial Squad", "faction": "imperial"})
+    assert response.status_code == 200
+    team = response.json()
+    assert team["faction"] == "imperial"
+
+    listed = client.get("/teams", headers=campaign_headers).json()
+    assert listed[0]["faction"] == "imperial"
+
+    fetched = client.get(f"/teams/{team['id']}", headers=campaign_headers).json()
+    assert fetched["faction"] == "imperial"
+
+
+def test_create_team_without_faction_defaults_to_null(pg_conn, client, campaign_headers):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    team = client.post("/teams", json={"name": "Rogue Squadron"}).json()
+    assert team["faction"] is None
+
+    fetched = client.get(f"/teams/{team['id']}", headers=campaign_headers).json()
+    assert fetched["faction"] is None
+
+
+def test_get_nonexistent_team_returns_404(pg_conn, client, campaign_headers):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    response = client.get("/teams/999999", headers=campaign_headers)
+    assert response.status_code == 404
+
+
+def test_get_teams_requires_campaign_api_key(pg_conn, client):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    assert client.get("/teams").status_code == 401
+    assert client.get("/teams", headers={"X-API-Key": "wrong"}).status_code == 401
+
+
+def test_create_player_then_captain_attaches_to_roster(pg_conn, client):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    team = client.post("/teams", json={"name": "Rogue Squadron"}).json()
+    client.post(f"/teams/{team['id']}/captain", json={"captain_discord_id": "discord-user-1"})
+    player = client.post("/players", json={"name": "Wedge"}).json()
+
+    response = client.post(
+        f"/teams/{team['id']}/roster",
+        json={"requesting_discord_id": "discord-user-1", "ref_player_id": player["id"]},
+    )
+
+    assert response.status_code == 200
+    with pg_conn.cursor() as cur:
+        cur.execute("SELECT primary_team_id FROM ref_players WHERE id = %s", (player["id"],))
+        (primary_team_id,) = cur.fetchone()
+    assert primary_team_id == team["id"]
+
+
+def test_non_captain_attach_returns_403(pg_conn, client):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    team = client.post("/teams", json={"name": "Rogue Squadron"}).json()
+    client.post(f"/teams/{team['id']}/captain", json={"captain_discord_id": "discord-user-1"})
+    player = client.post("/players", json={"name": "Wedge"}).json()
+
+    response = client.post(
+        f"/teams/{team['id']}/roster",
+        json={"requesting_discord_id": "someone-else", "ref_player_id": player["id"]},
+    )
+
+    assert response.status_code == 403
+
+
+def test_find_players_by_name(pg_conn, client):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    client.post("/players", json={"name": "Wedge Antilles"})
+    client.post("/players", json={"name": "Biggs Darklighter"})
+
+    response = client.get("/players", params={"name": "wedge"})
+
+    assert response.status_code == 200
+    names = [p["name"] for p in response.json()]
+    assert names == ["Wedge Antilles"]
+
+
+def test_find_players_by_name_no_match_returns_empty_list(pg_conn, client):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    response = client.get("/players", params={"name": "Nobody"})
+
+    assert response.status_code == 200
+    assert response.json() == []

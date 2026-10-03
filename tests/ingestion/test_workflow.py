@@ -1,0 +1,1294 @@
+import pytest
+
+from db.migrate_runner import apply_schema
+from ingestion.workflow import (
+    DuplicateMatchError,
+    cancel_ingestion,
+    check_duplicate_image,
+    edit_match_player,
+    edit_match_winner,
+    start_ingestion,
+    submit_answer,
+)
+
+
+def _make_ref_team(pg_conn, name):
+    with pg_conn.cursor() as cur:
+        cur.execute("INSERT INTO ref_teams (name) VALUES (%s) RETURNING id", (name,))
+        return cur.fetchone()[0]
+
+
+def _make_ref_player(pg_conn, name, primary_team_id, primary_role):
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO ref_players (name, primary_team_id, primary_role) VALUES (%s, %s, %s) RETURNING id",
+            (name, primary_team_id, primary_role),
+        )
+        return cur.fetchone()[0]
+
+
+def _get_system_id(pg_conn, name="Zavian Abyss"):
+    with pg_conn.cursor() as cur:
+        cur.execute("SELECT id FROM systems WHERE name = %s", (name,))
+        return cur.fetchone()[0]
+
+
+def _player(name, position, score, kills, deaths, assists, ai_kills, cap_ship_damage):
+    return {
+        "position": position,
+        "player": name,
+        "score": score,
+        "kills": kills,
+        "deaths": deaths,
+        "assists": assists,
+        "ai_kills": ai_kills,
+        "cap_ship_damage": cap_ship_damage,
+    }
+
+
+def _confirm_roster_sizes(pg_conn, result):
+    """Most fixtures in this file use abbreviated <5-a-side rosters for
+    brevity; confirm past the roster_size validation pause(s) before
+    exercising whatever the test actually cares about."""
+    while result["status"].startswith("awaiting_roster_size:"):
+        result = submit_answer(pg_conn, result["pending_match_id"], {"confirm": True})
+    return result
+
+
+def test_unambiguous_screenshot_is_persisted_immediately(pg_conn, monkeypatch):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    webhook_calls = []
+    monkeypatch.setattr("ingestion.workflow.send_match_persisted", webhook_calls.append)
+
+    imperial_team_id = _make_ref_team(pg_conn, "181st")
+    rebel_team_id = _make_ref_team(pg_conn, "Rogue Squadron")
+    _make_ref_player(pg_conn, "Vader", imperial_team_id, "Flex")
+    _make_ref_player(pg_conn, "Tarkin", imperial_team_id, "Support")
+    _make_ref_player(pg_conn, "Wedge", rebel_team_id, "Flex")
+    _make_ref_player(pg_conn, "Luke", rebel_team_id, "Support")
+    pg_conn.commit()
+
+    system_id = _get_system_id(pg_conn)
+
+    extracted_data = {
+        "match_result": "IMPERIAL VICTORY",
+        "teams": {
+            "imperial": {
+                "players": [
+                    _player("Vader", "Titan One", 1675, 4, 2, 1, 18, 30139),
+                    _player("Tarkin", "Titan Two", 900, 1, 3, 2, 5, 0),
+                ]
+            },
+            "rebel": {
+                "players": [
+                    _player("Wedge", "Vanguard One", 1200, 2, 4, 0, 10, 0),
+                    _player("Luke", "Vanguard Two", 1400, 3, 1, 2, 12, 0),
+                ]
+            },
+        },
+    }
+
+    result = start_ingestion(
+        pg_conn,
+        campaign_id="campaign-1",
+        turn_id="turn-1",
+        system_id=system_id,
+        match_type="team",
+        screenshot_ref="discord://message/123",
+        extracted_data=extracted_data,
+    )
+    result = _confirm_roster_sizes(pg_conn, result)
+
+    assert result["status"] == "persisted"
+    match_id = result["match_id"]
+
+    assert result["winner"] == "IMPERIAL"
+    assert [p["player"] for p in result["players"]["imperial"]] == ["Vader", "Tarkin"]
+    assert result["players"]["imperial"][0]["role"] == "Flex"
+    assert result["players"]["imperial"][0]["score"] == 1675
+    assert [p["player"] for p in result["players"]["rebel"]] == ["Wedge", "Luke"]
+
+    # ROADMAP Phase 5: _build_match_summary was widened for the
+    # campaign-project webhook/read API - confirm the extra fields round-trip.
+    assert result["turn_id"] == "turn-1"
+    assert result["system_id"] == system_id
+    assert result["campaign_id"] == "campaign-1"
+    assert result["match_type"] == "team"
+
+    # _persist calls send_match_persisted exactly once, after ELO recompute.
+    assert len(webhook_calls) == 1
+    assert webhook_calls[0]["match_id"] == match_id
+    assert webhook_calls[0]["winner"] == "IMPERIAL"
+
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT winner, match_type, turn_id, system_id, imperial_team_id, rebel_team_id
+            FROM matches WHERE id = %s
+            """,
+            (match_id,),
+        )
+        winner, match_type, turn_id, row_system_id, row_imp_team, row_reb_team = cur.fetchone()
+
+    assert winner == "IMPERIAL"
+    assert match_type == "team"
+    assert turn_id == "turn-1"
+    assert row_system_id == system_id
+    assert row_imp_team == imperial_team_id
+    assert row_reb_team == rebel_team_id
+
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT player_name, faction, role, score, kills, is_subbing
+            FROM player_stats ps
+            WHERE ps.match_id = %s
+            ORDER BY player_name
+            """,
+            (match_id,),
+        )
+        rows = cur.fetchall()
+
+    assert rows == [
+        ("Luke", "REBEL", "Support", 1400, 3, False),
+        ("Tarkin", "IMPERIAL", "Support", 900, 1, False),
+        ("Vader", "IMPERIAL", "Flex", 1675, 4, False),
+        ("Wedge", "REBEL", "Flex", 1200, 2, False),
+    ]
+
+    with pg_conn.cursor() as cur:
+        cur.execute("SELECT wins, losses FROM teams WHERE id = %s", (row_imp_team,))
+        assert cur.fetchone() == (1, 0)
+        cur.execute("SELECT wins, losses FROM teams WHERE id = %s", (row_reb_team,))
+        assert cur.fetchone() == (0, 1)
+
+    # ELO recompute fires synchronously as part of persist (both start at 1000).
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "SELECT rating FROM team_elo_ratings WHERE team_id = %s", (row_imp_team,)
+        )
+        (imp_rating,) = cur.fetchone()
+        cur.execute(
+            "SELECT rating FROM team_elo_ratings WHERE team_id = %s", (row_reb_team,)
+        )
+        (reb_rating,) = cur.fetchone()
+
+    assert float(imp_rating) == pytest.approx(1016.0)
+    assert float(reb_rating) == pytest.approx(984.0)
+
+
+def _make_standard_roster(pg_conn):
+    imperial_team_id = _make_ref_team(pg_conn, "181st")
+    rebel_team_id = _make_ref_team(pg_conn, "Rogue Squadron")
+    _make_ref_player(pg_conn, "Vader", imperial_team_id, "Flex")
+    _make_ref_player(pg_conn, "Tarkin", imperial_team_id, "Support")
+    _make_ref_player(pg_conn, "Wedge", rebel_team_id, "Flex")
+    _make_ref_player(pg_conn, "Luke", rebel_team_id, "Support")
+    pg_conn.commit()
+
+
+def _standard_extracted_data():
+    return {
+        "match_result": "IMPERIAL VICTORY",
+        "teams": {
+            "imperial": {
+                "players": [
+                    _player("Vader", "Titan One", 1675, 4, 2, 1, 18, 30139),
+                    _player("Tarkin", "Titan Two", 900, 1, 3, 2, 5, 0),
+                ]
+            },
+            "rebel": {
+                "players": [
+                    _player("Wedge", "Vanguard One", 1200, 2, 4, 0, 10, 0),
+                    _player("Luke", "Vanguard Two", 1400, 3, 1, 2, 12, 0),
+                ]
+            },
+        },
+    }
+
+
+def test_reposting_identical_stats_in_same_campaign_raises_duplicate_error(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+    _make_standard_roster(pg_conn)
+    system_id = _get_system_id(pg_conn)
+
+    first = start_ingestion(
+        pg_conn,
+        campaign_id="campaign-1",
+        turn_id="turn-1",
+        system_id=system_id,
+        match_type="team",
+        screenshot_ref="discord://message/first",
+        extracted_data=_standard_extracted_data(),
+    )
+    first = _confirm_roster_sizes(pg_conn, first)
+    assert first["status"] == "persisted"
+
+    with pytest.raises(DuplicateMatchError) as exc_info:
+        start_ingestion(
+            pg_conn,
+            campaign_id="campaign-1",
+            turn_id="turn-2",
+            system_id=system_id,
+            match_type="team",
+            screenshot_ref="discord://message/second",
+            extracted_data=_standard_extracted_data(),
+        )
+    assert exc_info.value.existing_match_id == first["match_id"]
+    assert exc_info.value.existing_summary["match_id"] == first["match_id"]
+    assert exc_info.value.reason == "stats"
+
+    # The hard-stopped duplicate should leave no pending_matches row behind.
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "SELECT count(*) FROM pending_matches WHERE screenshot_ref = %s",
+            ("discord://message/second",),
+        )
+        assert cur.fetchone()[0] == 0
+
+
+def test_identical_stats_in_a_different_campaign_is_not_a_duplicate(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+    _make_standard_roster(pg_conn)
+    system_id = _get_system_id(pg_conn)
+
+    first = start_ingestion(
+        pg_conn,
+        campaign_id="campaign-1",
+        turn_id="turn-1",
+        system_id=system_id,
+        match_type="team",
+        screenshot_ref="discord://message/first",
+        extracted_data=_standard_extracted_data(),
+    )
+    first = _confirm_roster_sizes(pg_conn, first)
+    assert first["status"] == "persisted"
+
+    second = start_ingestion(
+        pg_conn,
+        campaign_id="campaign-2",
+        turn_id="turn-1",
+        system_id=system_id,
+        match_type="team",
+        screenshot_ref="discord://message/second",
+        extracted_data=_standard_extracted_data(),
+    )
+    second = _confirm_roster_sizes(pg_conn, second)
+    assert second["status"] == "persisted"
+    assert second["match_id"] != first["match_id"]
+
+
+def test_stats_differing_by_one_field_are_not_a_duplicate(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+    _make_standard_roster(pg_conn)
+    system_id = _get_system_id(pg_conn)
+
+    first = start_ingestion(
+        pg_conn,
+        campaign_id="campaign-1",
+        turn_id="turn-1",
+        system_id=system_id,
+        match_type="team",
+        screenshot_ref="discord://message/first",
+        extracted_data=_standard_extracted_data(),
+    )
+    first = _confirm_roster_sizes(pg_conn, first)
+    assert first["status"] == "persisted"
+
+    almost_identical = _standard_extracted_data()
+    almost_identical["teams"]["imperial"]["players"][0]["score"] = 1676
+
+    second = start_ingestion(
+        pg_conn,
+        campaign_id="campaign-1",
+        turn_id="turn-2",
+        system_id=system_id,
+        match_type="team",
+        screenshot_ref="discord://message/second",
+        extracted_data=almost_identical,
+    )
+    second = _confirm_roster_sizes(pg_conn, second)
+    assert second["status"] == "persisted"
+    assert second["match_id"] != first["match_id"]
+
+
+def test_check_duplicate_image_raises_for_same_bytes_already_persisted(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+    _make_standard_roster(pg_conn)
+    system_id = _get_system_id(pg_conn)
+
+    image_bytes = b"exact-same-screenshot-file"
+    image_hash = check_duplicate_image(pg_conn, "campaign-1", image_bytes)
+
+    first = start_ingestion(
+        pg_conn,
+        campaign_id="campaign-1",
+        turn_id="turn-1",
+        system_id=system_id,
+        match_type="team",
+        screenshot_ref="discord://message/first",
+        extracted_data=_standard_extracted_data(),
+        image_hash=image_hash,
+    )
+    first = _confirm_roster_sizes(pg_conn, first)
+    assert first["status"] == "persisted"
+
+    with pg_conn.cursor() as cur:
+        cur.execute("SELECT image_hash FROM matches WHERE id = %s", (first["match_id"],))
+        assert cur.fetchone()[0] == image_hash
+
+    with pytest.raises(DuplicateMatchError) as exc_info:
+        check_duplicate_image(pg_conn, "campaign-1", image_bytes)
+    assert exc_info.value.existing_match_id == first["match_id"]
+    assert exc_info.value.reason == "image"
+
+
+def test_check_duplicate_image_ignores_different_bytes(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+    _make_standard_roster(pg_conn)
+
+    image_hash = check_duplicate_image(pg_conn, "campaign-1", b"some-screenshot")
+    assert check_duplicate_image(pg_conn, "campaign-1", b"a-different-screenshot") != image_hash
+
+
+def test_check_duplicate_image_scoped_to_campaign(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+    _make_standard_roster(pg_conn)
+    system_id = _get_system_id(pg_conn)
+
+    image_bytes = b"exact-same-screenshot-file"
+    image_hash = check_duplicate_image(pg_conn, "campaign-1", image_bytes)
+
+    first = start_ingestion(
+        pg_conn,
+        campaign_id="campaign-1",
+        turn_id="turn-1",
+        system_id=system_id,
+        match_type="team",
+        screenshot_ref="discord://message/first",
+        extracted_data=_standard_extracted_data(),
+        image_hash=image_hash,
+    )
+    _confirm_roster_sizes(pg_conn, first)
+
+    # Same bytes, different campaign - not flagged.
+    check_duplicate_image(pg_conn, "campaign-2", image_bytes)
+
+
+def test_unrecognized_player_name_pauses_for_clarification(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    imperial_team_id = _make_ref_team(pg_conn, "181st")
+    rebel_team_id = _make_ref_team(pg_conn, "Rogue Squadron")
+    vader_id = _make_ref_player(pg_conn, "Vader", imperial_team_id, "Flex")
+    _make_ref_player(pg_conn, "Tarkin", imperial_team_id, "Support")
+    _make_ref_player(pg_conn, "Wedge", rebel_team_id, "Flex")
+    _make_ref_player(pg_conn, "Luke", rebel_team_id, "Support")
+    pg_conn.commit()
+
+    system_id = _get_system_id(pg_conn)
+
+    extracted_data = {
+        "match_result": "IMPERIAL VICTORY",
+        "teams": {
+            "imperial": {
+                "players": [
+                    # Typo'd relative to the reference DB's "Vader".
+                    _player("Vadar", "Titan One", 1675, 4, 2, 1, 18, 30139),
+                    _player("Tarkin", "Titan Two", 900, 1, 3, 2, 5, 0),
+                ]
+            },
+            "rebel": {
+                "players": [
+                    _player("Wedge", "Vanguard One", 1200, 2, 4, 0, 10, 0),
+                    _player("Luke", "Vanguard Two", 1400, 3, 1, 2, 12, 0),
+                ]
+            },
+        },
+    }
+
+    result = start_ingestion(
+        pg_conn,
+        campaign_id="campaign-1",
+        turn_id="turn-1",
+        system_id=system_id,
+        match_type="team",
+        screenshot_ref="discord://message/456",
+        extracted_data=extracted_data,
+    )
+    result = _confirm_roster_sizes(pg_conn, result)
+
+    assert result["status"] == "awaiting_player_match:Vadar"
+    assert result["question"] == {
+        "type": "player_match",
+        "player_name": "Vadar",
+        "candidates": [{"id": vader_id, "name": "Vader"}],
+    }
+
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "SELECT status FROM pending_matches WHERE id = %s",
+            (result["pending_match_id"],),
+        )
+        assert cur.fetchone()[0] == "awaiting_player_match:Vadar"
+
+
+def test_submit_answer_resolves_paused_player_and_persists_match(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    imperial_team_id = _make_ref_team(pg_conn, "181st")
+    rebel_team_id = _make_ref_team(pg_conn, "Rogue Squadron")
+    vader_id = _make_ref_player(pg_conn, "Vader", imperial_team_id, "Flex")
+    _make_ref_player(pg_conn, "Tarkin", imperial_team_id, "Support")
+    _make_ref_player(pg_conn, "Wedge", rebel_team_id, "Flex")
+    _make_ref_player(pg_conn, "Luke", rebel_team_id, "Support")
+    pg_conn.commit()
+
+    system_id = _get_system_id(pg_conn)
+
+    extracted_data = {
+        "match_result": "IMPERIAL VICTORY",
+        "teams": {
+            "imperial": {
+                "players": [
+                    _player("Vadar", "Titan One", 1675, 4, 2, 1, 18, 30139),
+                    _player("Tarkin", "Titan Two", 900, 1, 3, 2, 5, 0),
+                ]
+            },
+            "rebel": {
+                "players": [
+                    _player("Wedge", "Vanguard One", 1200, 2, 4, 0, 10, 0),
+                    _player("Luke", "Vanguard Two", 1400, 3, 1, 2, 12, 0),
+                ]
+            },
+        },
+    }
+
+    paused = start_ingestion(
+        pg_conn,
+        campaign_id="campaign-1",
+        turn_id="turn-1",
+        system_id=system_id,
+        match_type="team",
+        screenshot_ref="discord://message/789",
+        extracted_data=extracted_data,
+    )
+    paused = _confirm_roster_sizes(pg_conn, paused)
+    assert paused["status"] == "awaiting_player_match:Vadar"
+
+    result = submit_answer(
+        pg_conn, paused["pending_match_id"], {"ref_player_id": vader_id}
+    )
+    result = _confirm_roster_sizes(pg_conn, result)
+
+    assert result["status"] == "persisted"
+    match_id = result["match_id"]
+
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "SELECT player_name, faction, role, score, is_subbing FROM player_stats WHERE match_id = %s AND player_name = 'Vader'",
+            (match_id,),
+        )
+        row = cur.fetchone()
+
+    # Persisted under the canonical ref_players name ("Vader"), not the
+    # as-typed/extracted name ("Vadar") the player_match ambiguity resolved
+    # past - otherwise the typo would leak into the summary and !edit lookups.
+    assert row == ("Vader", "IMPERIAL", "Flex", 1675, False)
+
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "SELECT status FROM pending_matches WHERE id = %s",
+            (paused["pending_match_id"],),
+        )
+        assert cur.fetchone()[0] == "persisted"
+
+
+def test_minority_player_is_auto_flagged_as_subbing_without_a_pause(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    imperial_team_id = _make_ref_team(pg_conn, "181st")
+    death_squadron_id = _make_ref_team(pg_conn, "Death Squadron")
+    rebel_team_id = _make_ref_team(pg_conn, "Rogue Squadron")
+    _make_ref_player(pg_conn, "Vader", imperial_team_id, "Flex")
+    _make_ref_player(pg_conn, "Tarkin", imperial_team_id, "Support")
+    # Piett's primary team is Death Squadron, but he's subbing for 181st here.
+    _make_ref_player(pg_conn, "Piett", death_squadron_id, "Farmer")
+    _make_ref_player(pg_conn, "Wedge", rebel_team_id, "Flex")
+    _make_ref_player(pg_conn, "Luke", rebel_team_id, "Support")
+    pg_conn.commit()
+
+    system_id = _get_system_id(pg_conn)
+
+    extracted_data = {
+        "match_result": "IMPERIAL VICTORY",
+        "teams": {
+            "imperial": {
+                "players": [
+                    _player("Vader", "Titan One", 1675, 4, 2, 1, 18, 30139),
+                    _player("Tarkin", "Titan Two", 900, 1, 3, 2, 5, 0),
+                    _player("Piett", "Titan Three", 800, 0, 1, 3, 2, 0),
+                ]
+            },
+            "rebel": {
+                "players": [
+                    _player("Wedge", "Vanguard One", 1200, 2, 4, 0, 10, 0),
+                    _player("Luke", "Vanguard Two", 1400, 3, 1, 2, 12, 0),
+                ]
+            },
+        },
+    }
+
+    result = start_ingestion(
+        pg_conn,
+        campaign_id="campaign-1",
+        turn_id="turn-1",
+        system_id=system_id,
+        match_type="team",
+        screenshot_ref="discord://message/101",
+        extracted_data=extracted_data,
+    )
+    result = _confirm_roster_sizes(pg_conn, result)
+
+    assert result["status"] == "persisted"
+
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "SELECT imperial_team_id FROM matches WHERE id = %s", (result["match_id"],)
+        )
+        (match_imperial_team_id,) = cur.fetchone()
+        cur.execute("SELECT id FROM teams WHERE reference_id = %s", (imperial_team_id,))
+        (expected_team_row_id,) = cur.fetchone()
+
+    assert match_imperial_team_id == expected_team_row_id
+
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "SELECT player_name, is_subbing FROM player_stats WHERE match_id = %s ORDER BY player_name",
+            (result["match_id"],),
+        )
+        rows = cur.fetchall()
+
+    assert rows == [
+        ("Luke", False),
+        ("Piett", True),
+        ("Tarkin", False),
+        ("Vader", False),
+        ("Wedge", False),
+    ]
+
+
+def test_no_clear_majority_pauses_for_team_assignment(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    team_a_id = _make_ref_team(pg_conn, "181st")
+    team_b_id = _make_ref_team(pg_conn, "Death Squadron")
+    rebel_team_id = _make_ref_team(pg_conn, "Rogue Squadron")
+    # A genuine 2-2 tie: no faction majority to infer from.
+    _make_ref_player(pg_conn, "Vader", team_a_id, "Flex")
+    _make_ref_player(pg_conn, "Tarkin", team_b_id, "Support")
+    _make_ref_player(pg_conn, "Wedge", rebel_team_id, "Flex")
+    _make_ref_player(pg_conn, "Luke", rebel_team_id, "Support")
+    pg_conn.commit()
+
+    system_id = _get_system_id(pg_conn)
+
+    extracted_data = {
+        "match_result": "IMPERIAL VICTORY",
+        "teams": {
+            "imperial": {
+                "players": [
+                    _player("Vader", "Titan One", 1675, 4, 2, 1, 18, 30139),
+                    _player("Tarkin", "Titan Two", 900, 1, 3, 2, 5, 0),
+                ]
+            },
+            "rebel": {
+                "players": [
+                    _player("Wedge", "Vanguard One", 1200, 2, 4, 0, 10, 0),
+                    _player("Luke", "Vanguard Two", 1400, 3, 1, 2, 12, 0),
+                ]
+            },
+        },
+    }
+
+    paused = start_ingestion(
+        pg_conn,
+        campaign_id="campaign-1",
+        turn_id="turn-1",
+        system_id=system_id,
+        match_type="team",
+        screenshot_ref="discord://message/202",
+        extracted_data=extracted_data,
+    )
+    paused = _confirm_roster_sizes(pg_conn, paused)
+
+    assert paused["status"] == "awaiting_team_assignment:imperial"
+    assert paused["question"]["type"] == "team_assignment"
+    assert paused["question"]["faction"] == "imperial"
+    assert {c["id"] for c in paused["question"]["candidates"]} == {team_a_id, team_b_id}
+
+    result = submit_answer(
+        pg_conn, paused["pending_match_id"], {"ref_team_id": team_a_id}
+    )
+    result = _confirm_roster_sizes(pg_conn, result)
+
+    assert result["status"] == "persisted"
+
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "SELECT player_name, is_subbing FROM player_stats WHERE match_id = %s ORDER BY player_name",
+            (result["match_id"],),
+        )
+        rows = cur.fetchall()
+
+    assert rows == [
+        ("Luke", False),
+        ("Tarkin", True),
+        ("Vader", False),
+        ("Wedge", False),
+    ]
+
+
+def test_player_with_no_primary_role_persists_directly_with_null_role(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    imperial_team_id = _make_ref_team(pg_conn, "181st")
+    rebel_team_id = _make_ref_team(pg_conn, "Rogue Squadron")
+    _make_ref_player(pg_conn, "Vader", imperial_team_id, None)
+    _make_ref_player(pg_conn, "Tarkin", imperial_team_id, "Support")
+    _make_ref_player(pg_conn, "Wedge", rebel_team_id, "Flex")
+    _make_ref_player(pg_conn, "Luke", rebel_team_id, "Support")
+    pg_conn.commit()
+
+    system_id = _get_system_id(pg_conn)
+
+    extracted_data = {
+        "match_result": "IMPERIAL VICTORY",
+        "teams": {
+            "imperial": {
+                "players": [
+                    _player("Vader", "Titan One", 1675, 4, 2, 1, 18, 30139),
+                    _player("Tarkin", "Titan Two", 900, 1, 3, 2, 5, 0),
+                ]
+            },
+            "rebel": {
+                "players": [
+                    _player("Wedge", "Vanguard One", 1200, 2, 4, 0, 10, 0),
+                    _player("Luke", "Vanguard Two", 1400, 3, 1, 2, 12, 0),
+                ]
+            },
+        },
+    }
+
+    result = start_ingestion(
+        pg_conn,
+        campaign_id="campaign-1",
+        turn_id="turn-1",
+        system_id=system_id,
+        match_type="team",
+        screenshot_ref="discord://message/303",
+        extracted_data=extracted_data,
+    )
+    result = _confirm_roster_sizes(pg_conn, result)
+
+    assert result["status"] == "persisted"
+    vader = next(p for p in result["players"]["imperial"] if p["player"] == "Vader")
+    assert vader["role"] is None
+
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "SELECT role FROM player_stats WHERE match_id = %s AND player_name = 'Vader'",
+            (result["match_id"],),
+        )
+        assert cur.fetchone()[0] is None
+
+
+def test_edit_match_player_can_set_and_clear_role(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    result = _persist_simple_team_match(pg_conn)
+    match_id = result["match_id"]
+
+    updated = edit_match_player(pg_conn, match_id, "Vader", {"role": "support"})
+    vader = next(p for p in updated["players"]["imperial"] if p["player"] == "Vader")
+    assert vader["role"] == "Support"
+
+    cleared = edit_match_player(pg_conn, match_id, "Vader", {"role": None})
+    vader = next(p for p in cleared["players"]["imperial"] if p["player"] == "Vader")
+    assert vader["role"] is None
+
+
+def test_edit_match_player_rejects_invalid_role(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    result = _persist_simple_team_match(pg_conn)
+
+    with pytest.raises(ValueError):
+        edit_match_player(pg_conn, result["match_id"], "Vader", {"role": "Pilot"})
+
+
+def test_pickup_match_uses_generic_teams_and_nulls_player_team_id(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    # Different primary teams on the same faction - would pause for
+    # match_type "team" (no clear majority), but pickup never assigns
+    # players to a team at all, so this should persist directly.
+    team_a_id = _make_ref_team(pg_conn, "181st")
+    team_b_id = _make_ref_team(pg_conn, "Death Squadron")
+    rebel_team_id = _make_ref_team(pg_conn, "Rogue Squadron")
+    _make_ref_player(pg_conn, "Vader", team_a_id, "Flex")
+    _make_ref_player(pg_conn, "Tarkin", team_b_id, "Support")
+    _make_ref_player(pg_conn, "Wedge", rebel_team_id, "Flex")
+    _make_ref_player(pg_conn, "Luke", rebel_team_id, "Support")
+    pg_conn.commit()
+
+    system_id = _get_system_id(pg_conn)
+
+    extracted_data = {
+        "match_result": "IMPERIAL VICTORY",
+        "teams": {
+            "imperial": {
+                "players": [
+                    _player("Vader", "Titan One", 1675, 4, 2, 1, 18, 30139),
+                    _player("Tarkin", "Titan Two", 900, 1, 3, 2, 5, 0),
+                ]
+            },
+            "rebel": {
+                "players": [
+                    _player("Wedge", "Vanguard One", 1200, 2, 4, 0, 10, 0),
+                    _player("Luke", "Vanguard Two", 1400, 3, 1, 2, 12, 0),
+                ]
+            },
+        },
+    }
+
+    result = start_ingestion(
+        pg_conn,
+        campaign_id="campaign-1",
+        turn_id="turn-1",
+        system_id=system_id,
+        match_type="pickup",
+        screenshot_ref="discord://message/909",
+        extracted_data=extracted_data,
+    )
+    result = _confirm_roster_sizes(pg_conn, result)
+
+    assert result["status"] == "persisted"
+    match_id = result["match_id"]
+
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT imp.name, reb.name FROM matches m
+            JOIN teams imp ON m.imperial_team_id = imp.id
+            JOIN teams reb ON m.rebel_team_id = reb.id
+            WHERE m.id = %s
+            """,
+            (match_id,),
+        )
+        imperial_team_name, rebel_team_name = cur.fetchone()
+
+    assert imperial_team_name == "Imp_pickup_team"
+    assert rebel_team_name == "NR_pickup_team"
+
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "SELECT player_name, team_id, is_subbing FROM player_stats WHERE match_id = %s ORDER BY player_name",
+            (match_id,),
+        )
+        rows = cur.fetchall()
+
+    assert rows == [
+        ("Luke", None, False),
+        ("Tarkin", None, False),
+        ("Vader", None, False),
+        ("Wedge", None, False),
+    ]
+
+    # Player ELO recompute fires synchronously for pickup, same as team ELO
+    # does for match_type "team" (both sides started at 1000, imperial won).
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT p.name, per.rating FROM player_elo_ratings per
+            JOIN players p ON per.player_id = p.id
+            WHERE per.campaign_id = 'campaign-1' AND per.match_type = 'pickup' AND per.role = 'general'
+            ORDER BY p.name
+            """
+        )
+        general_ratings = {name: float(rating) for name, rating in cur.fetchall()}
+
+    assert general_ratings["Vader"] == pytest.approx(1016.0)
+    assert general_ratings["Wedge"] == pytest.approx(984.0)
+
+
+def test_ranked_match_uses_generic_ranked_team_names(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    imperial_team_id = _make_ref_team(pg_conn, "181st")
+    rebel_team_id = _make_ref_team(pg_conn, "Rogue Squadron")
+    _make_ref_player(pg_conn, "Vader", imperial_team_id, "Flex")
+    _make_ref_player(pg_conn, "Wedge", rebel_team_id, "Flex")
+    pg_conn.commit()
+
+    system_id = _get_system_id(pg_conn)
+
+    extracted_data = {
+        "match_result": "REBEL VICTORY",
+        "teams": {
+            "imperial": {"players": [_player("Vader", "Titan One", 1000, 2, 2, 0, 5, 0)]},
+            "rebel": {"players": [_player("Wedge", "Vanguard One", 1500, 5, 0, 1, 10, 0)]},
+        },
+    }
+
+    result = start_ingestion(
+        pg_conn,
+        campaign_id="campaign-1",
+        turn_id="turn-1",
+        system_id=system_id,
+        match_type="ranked",
+        screenshot_ref="discord://message/910",
+        extracted_data=extracted_data,
+    )
+    result = _confirm_roster_sizes(pg_conn, result)
+
+    assert result["status"] == "persisted"
+
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT imp.name, reb.name FROM matches m
+            JOIN teams imp ON m.imperial_team_id = imp.id
+            JOIN teams reb ON m.rebel_team_id = reb.id
+            WHERE m.id = %s
+            """,
+            (result["match_id"],),
+        )
+        imperial_team_name, rebel_team_name = cur.fetchone()
+
+    assert imperial_team_name == "Imperial_ranked_team"
+    assert rebel_team_name == "NR_ranked_team"
+
+    # Ranked gets its own player ELO ladder too (REBEL won here).
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT p.name, per.rating FROM player_elo_ratings per
+            JOIN players p ON per.player_id = p.id
+            WHERE per.campaign_id = 'campaign-1' AND per.match_type = 'ranked' AND per.role = 'general'
+            ORDER BY p.name
+            """
+        )
+        general_ratings = {name: float(rating) for name, rating in cur.fetchall()}
+
+    assert general_ratings["Vader"] == pytest.approx(984.0)
+    assert general_ratings["Wedge"] == pytest.approx(1016.0)
+
+
+def _persist_simple_team_match(pg_conn, campaign_id="campaign-1"):
+    imperial_team_id = _make_ref_team(pg_conn, "181st")
+    rebel_team_id = _make_ref_team(pg_conn, "Rogue Squadron")
+    _make_ref_player(pg_conn, "Vader", imperial_team_id, "Flex")
+    _make_ref_player(pg_conn, "Tarkin", imperial_team_id, "Support")
+    _make_ref_player(pg_conn, "Wedge", rebel_team_id, "Flex")
+    _make_ref_player(pg_conn, "Luke", rebel_team_id, "Support")
+    pg_conn.commit()
+
+    system_id = _get_system_id(pg_conn)
+    extracted_data = {
+        "match_result": "IMPERIAL VICTORY",
+        "teams": {
+            "imperial": {
+                "players": [
+                    _player("Vader", "Titan One", 1675, 4, 2, 1, 18, 30139),
+                    _player("Tarkin", "Titan Two", 900, 1, 3, 2, 5, 0),
+                ]
+            },
+            "rebel": {
+                "players": [
+                    _player("Wedge", "Vanguard One", 1200, 2, 4, 0, 10, 0),
+                    _player("Luke", "Vanguard Two", 1400, 3, 1, 2, 12, 0),
+                ]
+            },
+        },
+    }
+    result = start_ingestion(
+        pg_conn,
+        campaign_id=campaign_id,
+        turn_id="turn-1",
+        system_id=system_id,
+        match_type="team",
+        screenshot_ref="discord://message/edit-test",
+        extracted_data=extracted_data,
+    )
+    return _confirm_roster_sizes(pg_conn, result)
+
+
+def test_edit_match_player_updates_stats_and_recomputes_elo(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    result = _persist_simple_team_match(pg_conn)
+    match_id = result["match_id"]
+
+    updated = edit_match_player(pg_conn, match_id, "Vader", {"score": 2000, "kills": 10})
+
+    assert updated["status"] == "persisted"
+    vader = next(p for p in updated["players"]["imperial"] if p["player"] == "Vader")
+    assert vader["score"] == 2000
+    assert vader["kills"] == 10
+
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "SELECT score, kills FROM player_stats WHERE match_id = %s AND player_name = 'Vader'",
+            (match_id,),
+        )
+        assert cur.fetchone() == (2000, 10)
+
+
+def test_edit_match_player_rejects_unknown_field(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    result = _persist_simple_team_match(pg_conn)
+
+    with pytest.raises(ValueError):
+        edit_match_player(pg_conn, result["match_id"], "Vader", {"favorite_color": "red"})
+
+
+def test_edit_match_player_rejects_unknown_player(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    result = _persist_simple_team_match(pg_conn)
+
+    with pytest.raises(ValueError):
+        edit_match_player(pg_conn, result["match_id"], "Nobody", {"score": 1})
+
+
+def test_edit_match_player_reassigns_misread_name_to_correct_canonical_player(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    result = _persist_simple_team_match(pg_conn)
+    match_id = result["match_id"]
+
+    updated = edit_match_player(pg_conn, match_id, "Vader", {"name": "Tarkin"})
+
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "SELECT p.name FROM player_stats ps JOIN players p ON ps.player_id = p.id "
+            "WHERE ps.match_id = %s AND ps.player_name = 'Tarkin' AND ps.role = 'Flex'",
+            (match_id,),
+        )
+        assert cur.fetchone() == ("Tarkin",)
+    assert updated["status"] == "persisted"
+
+
+def test_edit_match_winner_flips_team_wins_and_losses(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    result = _persist_simple_team_match(pg_conn)
+    match_id = result["match_id"]
+
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "SELECT imp.wins, imp.losses, reb.wins, reb.losses FROM matches m "
+            "JOIN teams imp ON m.imperial_team_id = imp.id "
+            "JOIN teams reb ON m.rebel_team_id = reb.id WHERE m.id = %s",
+            (match_id,),
+        )
+        assert cur.fetchone() == (1, 0, 0, 1)
+
+    updated = edit_match_winner(pg_conn, match_id, "rebel")
+    assert updated["winner"] == "REBEL"
+
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "SELECT imp.wins, imp.losses, reb.wins, reb.losses FROM matches m "
+            "JOIN teams imp ON m.imperial_team_id = imp.id "
+            "JOIN teams reb ON m.rebel_team_id = reb.id WHERE m.id = %s",
+            (match_id,),
+        )
+        assert cur.fetchone() == (0, 1, 1, 0)
+
+
+def test_edit_match_winner_rejects_invalid_value(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    result = _persist_simple_team_match(pg_conn)
+
+    with pytest.raises(ValueError):
+        edit_match_winner(pg_conn, result["match_id"], "SITH")
+
+
+def test_wrong_roster_size_pauses_for_confirmation(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    imperial_team_id = _make_ref_team(pg_conn, "181st")
+    rebel_team_id = _make_ref_team(pg_conn, "Rogue Squadron")
+    _make_ref_player(pg_conn, "Vader", imperial_team_id, "Flex")
+    _make_ref_player(pg_conn, "Wedge", rebel_team_id, "Flex")
+    pg_conn.commit()
+
+    system_id = _get_system_id(pg_conn)
+    extracted_data = {
+        "match_result": "IMPERIAL VICTORY",
+        "teams": {
+            "imperial": {"players": [_player("Vader", "Titan One", 1675, 4, 2, 1, 18, 30139)]},
+            "rebel": {"players": [_player("Wedge", "Vanguard One", 1200, 2, 4, 0, 10, 0)]},
+        },
+    }
+
+    paused = start_ingestion(
+        pg_conn,
+        campaign_id="campaign-1",
+        turn_id="turn-1",
+        system_id=system_id,
+        match_type="team",
+        screenshot_ref="discord://message/roster-size",
+        extracted_data=extracted_data,
+    )
+
+    assert paused["status"] == "awaiting_roster_size:imperial"
+    assert paused["question"] == {
+        "type": "roster_size",
+        "faction": "imperial",
+        "count": 1,
+        "expected": 5,
+    }
+
+    result = submit_answer(pg_conn, paused["pending_match_id"], {"confirm": True})
+    assert result["status"] == "awaiting_roster_size:rebel"
+
+    result = submit_answer(pg_conn, result["pending_match_id"], {"confirm": True})
+    assert result["status"] == "persisted"
+
+
+def test_cancel_ingestion_marks_a_paused_match_cancelled(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    imperial_team_id = _make_ref_team(pg_conn, "181st")
+    rebel_team_id = _make_ref_team(pg_conn, "Rogue Squadron")
+    _make_ref_player(pg_conn, "Vader", imperial_team_id, "Flex")
+    _make_ref_player(pg_conn, "Wedge", rebel_team_id, "Flex")
+    pg_conn.commit()
+
+    system_id = _get_system_id(pg_conn)
+    extracted_data = {
+        "match_result": "IMPERIAL VICTORY",
+        "teams": {
+            "imperial": {"players": [_player("Vader", "Titan One", 1675, 4, 2, 1, 18, 30139)]},
+            "rebel": {"players": [_player("Wedge", "Vanguard One", 1200, 2, 4, 0, 10, 0)]},
+        },
+    }
+
+    paused = start_ingestion(
+        pg_conn,
+        campaign_id="campaign-1",
+        turn_id="turn-1",
+        system_id=system_id,
+        match_type="team",
+        screenshot_ref="discord://message/to-cancel",
+        extracted_data=extracted_data,
+    )
+    assert paused["status"] == "awaiting_roster_size:imperial"
+
+    result = cancel_ingestion(pg_conn, paused["pending_match_id"])
+    assert result == {"status": "cancelled", "pending_match_id": paused["pending_match_id"]}
+
+    with pg_conn.cursor() as cur:
+        cur.execute(
+            "SELECT status FROM pending_matches WHERE id = %s", (paused["pending_match_id"],)
+        )
+        assert cur.fetchone()[0] == "cancelled"
+
+    # Terminal - can't cancel a match that's already cancelled or resume it.
+    with pytest.raises(ValueError):
+        cancel_ingestion(pg_conn, paused["pending_match_id"])
+
+
+def test_cancel_ingestion_rejects_already_persisted_match(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    result = _persist_simple_team_match(pg_conn)
+
+    with pytest.raises(ValueError):
+        cancel_ingestion(pg_conn, result["pending_match_id"])
+
+
+def test_cancel_ingestion_rejects_unknown_id(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    with pytest.raises(ValueError):
+        cancel_ingestion(pg_conn, 999999)
+
+
+def test_missing_field_pauses_for_a_value(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    imperial_team_id = _make_ref_team(pg_conn, "181st")
+    rebel_team_id = _make_ref_team(pg_conn, "Rogue Squadron")
+    _make_ref_player(pg_conn, "Vader", imperial_team_id, "Flex")
+    _make_ref_player(pg_conn, "Tarkin", imperial_team_id, "Support")
+    _make_ref_player(pg_conn, "Wedge", rebel_team_id, "Flex")
+    _make_ref_player(pg_conn, "Luke", rebel_team_id, "Support")
+    pg_conn.commit()
+
+    system_id = _get_system_id(pg_conn)
+    extracted_data = {
+        "match_result": "IMPERIAL VICTORY",
+        "teams": {
+            "imperial": {
+                "players": [
+                    {**_player("Vader", "Titan One", 1675, 4, 2, 1, 18, 30139), "kills": None},
+                    _player("Tarkin", "Titan Two", 900, 1, 3, 2, 5, 0),
+                ]
+            },
+            "rebel": {
+                "players": [
+                    _player("Wedge", "Vanguard One", 1200, 2, 4, 0, 10, 0),
+                    _player("Luke", "Vanguard Two", 1400, 3, 1, 2, 12, 0),
+                ]
+            },
+        },
+    }
+
+    paused = start_ingestion(
+        pg_conn,
+        campaign_id="campaign-1",
+        turn_id="turn-1",
+        system_id=system_id,
+        match_type="team",
+        screenshot_ref="discord://message/missing-field",
+        extracted_data=extracted_data,
+    )
+    paused = _confirm_roster_sizes(pg_conn, paused)
+
+    assert paused["status"] == "awaiting_missing_field:Vader:kills"
+    assert paused["question"] == {
+        "type": "missing_field",
+        "player_name": "Vader",
+        "field": "kills",
+        "numeric": True,
+    }
+
+    result = submit_answer(pg_conn, paused["pending_match_id"], {"value": 4})
+    result = _confirm_roster_sizes(pg_conn, result)
+
+    assert result["status"] == "persisted"
+    vader = next(p for p in result["players"]["imperial"] if p["player"] == "Vader")
+    assert vader["kills"] == 4
+
+
+def test_missing_string_field_pauses_and_accepts_text(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    imperial_team_id = _make_ref_team(pg_conn, "181st")
+    rebel_team_id = _make_ref_team(pg_conn, "Rogue Squadron")
+    _make_ref_player(pg_conn, "Vader", imperial_team_id, "Flex")
+    _make_ref_player(pg_conn, "Wedge", rebel_team_id, "Flex")
+    pg_conn.commit()
+
+    system_id = _get_system_id(pg_conn)
+    extracted_data = {
+        "match_result": "IMPERIAL VICTORY",
+        "teams": {
+            "imperial": {
+                "players": [
+                    {**_player("Vader", "Titan One", 1675, 4, 2, 1, 18, 30139), "position": None}
+                ]
+            },
+            "rebel": {"players": [_player("Wedge", "Vanguard One", 1200, 2, 4, 0, 10, 0)]},
+        },
+    }
+
+    paused = start_ingestion(
+        pg_conn,
+        campaign_id="campaign-1",
+        turn_id="turn-1",
+        system_id=system_id,
+        match_type="team",
+        screenshot_ref="discord://message/missing-position",
+        extracted_data=extracted_data,
+    )
+    paused = _confirm_roster_sizes(pg_conn, paused)
+
+    assert paused["status"] == "awaiting_missing_field:Vader:position"
+    assert paused["question"]["numeric"] is False
+
+    result = submit_answer(pg_conn, paused["pending_match_id"], {"value": "Titan One"})
+    result = _confirm_roster_sizes(pg_conn, result)
+
+    assert result["status"] == "persisted"
+
+
+def test_full_five_a_side_roster_with_all_fields_persists_without_pausing(pg_conn):
+    apply_schema(pg_conn)
+    pg_conn.commit()
+
+    imperial_team_id = _make_ref_team(pg_conn, "181st")
+    rebel_team_id = _make_ref_team(pg_conn, "Rogue Squadron")
+    imperial_names = ["Vader", "Tarkin", "Piett", "Veers", "Ozzel"]
+    rebel_names = ["Wedge", "Luke", "Leia", "Han", "Lando"]
+    for name in imperial_names:
+        _make_ref_player(pg_conn, name, imperial_team_id, "Flex")
+    for name in rebel_names:
+        _make_ref_player(pg_conn, name, rebel_team_id, "Flex")
+    pg_conn.commit()
+
+    system_id = _get_system_id(pg_conn)
+    extracted_data = {
+        "match_result": "IMPERIAL VICTORY",
+        "teams": {
+            "imperial": {
+                "players": [
+                    _player(name, f"Titan {i + 1}", 1000 + i, i, i, i, i, i)
+                    for i, name in enumerate(imperial_names)
+                ]
+            },
+            "rebel": {
+                "players": [
+                    _player(name, f"Vanguard {i + 1}", 900 + i, i, i, i, i, i)
+                    for i, name in enumerate(rebel_names)
+                ]
+            },
+        },
+    }
+
+    result = start_ingestion(
+        pg_conn,
+        campaign_id="campaign-1",
+        turn_id="turn-1",
+        system_id=system_id,
+        match_type="team",
+        screenshot_ref="discord://message/full-roster",
+        extracted_data=extracted_data,
+    )
+
+    assert result["status"] == "persisted"
