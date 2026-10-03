@@ -254,6 +254,56 @@ Same shape/semantics as the team ladder. A player who's never played that
 `match_type` (or never played that specific role, for a role-scoped query)
 simply won't appear - no zero-rating placeholder rows.
 
+### `GET /seasons`
+
+Every season with its match count (added 2026-10-03 for the campaign
+project's Commander Q&A).
+
+```json
+[{"season_id": 1, "name": "TEST", "match_count": 17}]
+```
+
+### `GET /matchups?team_a=&team_b=&season_id=&campaign_id=`
+
+Every match between two teams, either side, newest first, plus each team's
+wins. **Teams are passed by name** (case-insensitive): `teams` (what matches
+reference) and `ref_teams` (what `GET /teams` lists) share names but not
+ids, so a name is the one key a caller can't get wrong. `season_id` and
+`campaign_id` are optional filters. 404 for an unknown team name; an empty
+`matches` list means the two have never met.
+
+```json
+{
+  "team_a": {"name": "NWS", "wins": 2},
+  "team_b": {"name": "KE", "wins": 2},
+  "matches": [
+    {"match_id": 4, "match_date": "2024-02-08T12:00:00+00:00", "season_id": 1,
+     "season": "TEST", "campaign_id": null, "match_type": "team",
+     "imperial_team": "NWS", "rebel_team": "KE", "winner": "REBEL",
+     "winner_team": "KE"}
+  ]
+}
+```
+
+### `GET /matches/{match_id}`
+
+One match with its full per-player scoreboard (404 if there's no such
+match). `players` has the same per-faction shape as `GET /matches/latest`,
+plus `is_subbing`; each side is ordered by score, highest first.
+
+```json
+{
+  "match_id": 4, "match_date": "2024-02-08T12:00:00+00:00", "season_id": 1,
+  "season": "TEST", "campaign_id": null, "turn_id": null, "system_id": null,
+  "match_type": "team", "imperial_team": "NWS", "rebel_team": "KE",
+  "winner": "REBEL",
+  "players": {"imperial": [{"player": "NiWi-Slacks", "role": "Farmer", "score": 1810,
+                            "kills": 0, "deaths": 0, "assists": 0, "ai_kills": 0,
+                            "cap_ship_damage": 0, "is_subbing": false}],
+              "rebel": []}
+}
+```
+
 ---
 
 ## Errors

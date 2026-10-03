@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from api.auth import require_campaign_api_key
 from api.dependencies import get_pg_conn
 from ingestion.workflow import get_latest_match
+from stats.history import get_match_detail, get_matchup, list_seasons
 from stats.player_elo import GENERAL as PLAYER_ELO_GENERAL
 from stats.player_elo import get_player_elo_ladder
 from stats.team_elo import get_team_elo_ladder
@@ -35,6 +36,33 @@ def get_latest_match_route(
             detail=f"No match for campaign_id={campaign_id!r} turn_id={turn_id!r} system_id={system_id!r}",
         )
     return match
+
+
+@router.get("/matches/{match_id}")
+def get_match_detail_route(match_id: int, pg_conn=Depends(get_pg_conn)):
+    match = get_match_detail(pg_conn, match_id)
+    if match is None:
+        raise HTTPException(status_code=404, detail=f"No match with id {match_id}")
+    return match
+
+
+@router.get("/seasons")
+def list_seasons_route(pg_conn=Depends(get_pg_conn)):
+    return list_seasons(pg_conn)
+
+
+@router.get("/matchups")
+def get_matchup_route(
+    team_a: str,
+    team_b: str,
+    season_id: int | None = None,
+    campaign_id: str | None = None,
+    pg_conn=Depends(get_pg_conn),
+):
+    try:
+        return get_matchup(pg_conn, team_a, team_b, season_id, campaign_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
 
 @router.get("/elo/teams")
