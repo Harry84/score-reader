@@ -11,6 +11,7 @@ from ingestion.workflow import get_latest_match
 from stats.history import get_match_detail, get_matchup, list_seasons
 from stats.player_elo import GENERAL as PLAYER_ELO_GENERAL
 from stats.player_elo import get_player_elo_ladder
+from stats.player_history import get_player_career, get_player_elo_history, get_stat_leaders
 from stats.team_elo import get_team_elo_ladder
 from teams.onboarding import get_team_roster
 
@@ -78,3 +79,47 @@ def get_player_elo_ladder_route(
     pg_conn=Depends(get_pg_conn),
 ):
     return get_player_elo_ladder(pg_conn, campaign_id, match_type, role)
+
+
+@router.get("/elo/players/history")
+def get_player_elo_history_route(
+    campaign_id: str,
+    player: str,
+    match_type: str,
+    role: str = PLAYER_ELO_GENERAL,
+    pg_conn=Depends(get_pg_conn),
+):
+    try:
+        return get_player_elo_history(pg_conn, campaign_id, player, match_type, role)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.get("/players/career")
+def get_player_career_route(
+    player: str,
+    campaign_id: str | None = None,
+    match_type: str | None = None,
+    pg_conn=Depends(get_pg_conn),
+):
+    try:
+        return get_player_career(pg_conn, player, campaign_id, match_type)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.get("/stats/leaders")
+def get_stat_leaders_route(
+    stat: str,
+    per: str = "total",
+    campaign_id: str | None = None,
+    match_type: str | None = None,
+    role: str | None = None,
+    min_matches: int = 1,
+    limit: int = 10,
+    pg_conn=Depends(get_pg_conn),
+):
+    try:
+        return get_stat_leaders(pg_conn, stat, per, campaign_id, match_type, role, min_matches, min(limit, 50))
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
